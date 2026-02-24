@@ -1,0 +1,6 @@
+# logs
+logs/
+*.log
+
+# junk
+.DS_Store

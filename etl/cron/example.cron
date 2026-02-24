@@ -1,0 +1,2 @@
+# Run Trigger ETL daily at 02:00
+0 2 * * * /home/USER/trigger-etl/etl/bin/run_etl.sh
