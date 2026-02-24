@@ -68,15 +68,17 @@ run_call() {
   echo "[$(ts)] Duration: $((end - start))s" | tee -a "$LOG_FILE"
 
   if [[ -n "$table" ]]; then
-    rows=$(mysql --batch --skip-column-names -e "SELECT COUNT(*) FROM ${table};")
+    echo "[$(ts)] Counting rows in ${table}" >>"$LOG_FILE"
+    rows=$(mysql --batch --skip-column-names \
+      -e "SELECT COUNT(*) FROM ${table};" >>"$LOG_FILE" 2>&1 | tail -n 1)
     echo "[$(ts)] ${table} rows: ${rows}" | tee -a "$LOG_FILE"
   fi
 }
 
 # ---- ETL STEPS ----
-run_call "trigger.rebuild_myair_hourly"           "trigger.myair_hourly"
-run_call "trigger.rebuild_smartwatchhigh_hourly"  "trigger.smartwatchhigh_hourly"
-run_call "trigger.rebuild_smartwatchlow_hourly"   "trigger.smartwatchlow_hourly"
-run_call "trigger.rebuild_myair_daily"            "trigger.myair_daily"
+run_call "triggerIO.rebuild_myair_hourly"           "triggerIO.myair_hourly"
+run_call "triggerIO.rebuild_smartwatchhigh_hourly"  "triggerIO.smartwatchhigh_hourly"
+run_call "triggerIO.rebuild_smartwatchlow_hourly"   "triggerIO.smartwatchlow_hourly"
+run_call "triggerIO.rebuild_gps_hourly"            "triggerIO.gps_hourly"
 
 echo "[$(ts)] ETL run finished" | tee -a "$LOG_FILE"

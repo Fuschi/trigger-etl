@@ -1,4 +1,4 @@
-USE trigger;
+USE triggerIO;
 
 -- =========================================================
 -- myair_hourly full rebuild
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS myair_hourly (
   hour     TINYINT      NOT NULL,
 
   -- Particulate mass
-  pm1_mean DOUBLE NULL,  pm1_min DOUBLE NULL,  pm1_max DOUBLE NULL,  pm1_valid_n INT NOT NULL,
+  pm1_mean  DOUBLE NULL, pm1_min  DOUBLE NULL, pm1_max  DOUBLE NULL, pm1_valid_n  INT NOT NULL,
   pm25_mean DOUBLE NULL, pm25_min DOUBLE NULL, pm25_max DOUBLE NULL, pm25_valid_n INT NOT NULL,
   pm10_mean DOUBLE NULL, pm10_min DOUBLE NULL, pm10_max DOUBLE NULL, pm10_valid_n INT NOT NULL,
 
@@ -75,24 +75,14 @@ BEGIN
     myair_records_n
   )
   WITH
-  build_event_ts AS (
-    SELECT
-      t.*,
-      STR_TO_DATE(
-        CONCAT(t.year,'-',LPAD(t.month,2,'0'),'-',LPAD(t.day,2,'0'),' ',
-               LPAD(t.hour,2,'0'),':',LPAD(t.minute,2,'0'),':',LPAD(t.second,2,'0')),
-        '%Y-%m-%d %H:%i:%s'
-      ) AS event_ts
-    FROM myair AS t
-  ),
   second_bucket_min_created_at AS (
     SELECT deviceId, firmware, event_ts, MIN(created_at) AS min_created_at
-    FROM build_event_ts
+    FROM myair
     GROUP BY deviceId, firmware, event_ts
   ),
   second_bucket_created_at_counts AS (
     SELECT deviceId, firmware, event_ts, created_at, COUNT(*) AS cnt_at_created
-    FROM build_event_ts
+    FROM myair
     GROUP BY deviceId, firmware, event_ts, created_at
   ),
   second_bucket_unique_minimum AS (
@@ -107,7 +97,7 @@ BEGIN
   ),
   myair_strict_second_dedup AS (
     SELECT y.*
-    FROM build_event_ts AS y
+    FROM myair AS y
     JOIN second_bucket_unique_minimum AS u
       ON  y.deviceId = u.deviceId
       AND y.firmware = u.firmware
@@ -211,7 +201,6 @@ BEGIN
     CAST(MAX(CASE WHEN d.light IS NOT NULL THEN d.light END) AS DOUBLE) AS light_max,
     SUM(CASE WHEN d.light IS NOT NULL THEN 1 ELSE 0 END) AS light_valid_n,
 
-    -- Total rows after strict dedup + user binding in that hour bucket
     COUNT(*) AS myair_records_n
 
   FROM myair_strict_second_dedup_with_user AS d
