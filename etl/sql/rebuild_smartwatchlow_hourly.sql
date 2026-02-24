@@ -1,5 +1,3 @@
-USE triggerIO;
-
 -- =========================================================
 -- smartwatchlow_hourly full rebuild
 -- - strict second-level de-duplication (drop ambiguous seconds)
