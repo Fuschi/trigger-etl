@@ -1,8 +1,8 @@
 -- =========================================================
--- smartwatchlow_hourly full rebuild
+-- smartwatchlow_hourly full rebuild (IN-PLACE)
 -- - strict second-level de-duplication (drop ambiguous seconds)
 -- - keep only deviceIds mapping to exactly one userId
--- - safe swap: build __new then RENAME TABLE
+-- - rebuild in place: TRUNCATE + INSERT (no swap tables)
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS smartwatchlow_hourly (
@@ -53,10 +53,15 @@ DELIMITER //
 
 CREATE OR REPLACE PROCEDURE rebuild_smartwatchlow_hourly()
 BEGIN
-  DROP TABLE IF EXISTS smartwatchlow_hourly__new;
-  CREATE TABLE smartwatchlow_hourly__new LIKE smartwatchlow_hourly;
+  /*
+    NOTE:
+    This rebuild is "in place". During the rebuild window the hourly table
+    will be empty (after TRUNCATE) and then progressively refilled.
+  */
 
-  INSERT INTO smartwatchlow_hourly__new (
+  TRUNCATE TABLE smartwatchlow_hourly;
+
+  INSERT INTO smartwatchlow_hourly (
     userId, deviceId, firmware, date, hour,
 
     steps_sum, steps_valid_n,
@@ -152,14 +157,10 @@ BEGIN
 
     /* Total rows after strict dedup + user binding */
     COUNT(*) AS smartwatchlow_records_n
-
   FROM smartwatchlow_strict_second_dedup_with_user AS d
   GROUP BY d.userId, d.deviceId, d.firmware, DATE(d.event_ts), HOUR(d.event_ts);
 
-  DROP TABLE IF EXISTS smartwatchlow_hourly__old;
-  RENAME TABLE smartwatchlow_hourly TO smartwatchlow_hourly__old,
-               smartwatchlow_hourly__new TO smartwatchlow_hourly;
-  DROP TABLE IF EXISTS smartwatchlow_hourly__old;
 END//
 
 DELIMITER ;
+

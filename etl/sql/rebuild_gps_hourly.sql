@@ -1,8 +1,8 @@
 -- =========================================================
--- gps_hourly full rebuild
+-- gps_hourly full rebuild (IN-PLACE)
 -- - strict second-level de-duplication (drop ambiguous seconds)
 -- - keep only deviceIds mapping to exactly one userId
--- - safe swap: build __new then RENAME TABLE
+-- - rebuild in place: TRUNCATE + INSERT (no swap tables)
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS gps_hourly (
@@ -43,10 +43,15 @@ DELIMITER //
 
 CREATE OR REPLACE PROCEDURE rebuild_gps_hourly()
 BEGIN
-  DROP TABLE IF EXISTS gps_hourly__new;
-  CREATE TABLE gps_hourly__new LIKE gps_hourly;
+  /*
+    NOTE:
+    This rebuild is "in place". During the rebuild window the hourly table
+    will be empty (after TRUNCATE) and then progressively refilled.
+  */
 
-  INSERT INTO gps_hourly__new (
+  TRUNCATE TABLE gps_hourly;
+
+  INSERT INTO gps_hourly (
     userId, deviceId, firmware, date, hour,
 
     longitude_mean, longitude_min, longitude_max, longitude_valid_n,
@@ -128,10 +133,7 @@ BEGIN
   FROM gps_strict_second_dedup_with_user AS d
   GROUP BY d.userId, d.deviceId, d.firmware, DATE(d.event_ts), HOUR(d.event_ts);
 
-  DROP TABLE IF EXISTS gps_hourly__old;
-  RENAME TABLE gps_hourly TO gps_hourly__old,
-               gps_hourly__new TO gps_hourly;
-  DROP TABLE IF EXISTS gps_hourly__old;
 END//
 
 DELIMITER ;
+

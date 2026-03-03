@@ -1,8 +1,8 @@
 -- =========================================================
--- myair_hourly full rebuild
+-- myair_hourly full rebuild (IN-PLACE)
 -- - strict second-level de-duplication (drop ambiguous seconds)
 -- - keep only deviceIds mapping to exactly one userId
--- - safe swap: build __new then RENAME TABLE
+-- - rebuild in place: TRUNCATE + INSERT (no swap tables)
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS myair_hourly (
@@ -46,10 +46,15 @@ DELIMITER //
 
 CREATE OR REPLACE PROCEDURE rebuild_myair_hourly()
 BEGIN
-  DROP TABLE IF EXISTS myair_hourly__new;
-  CREATE TABLE myair_hourly__new LIKE myair_hourly;
+  /*
+    NOTE:
+    This rebuild is "in place". During the rebuild window the hourly table
+    will be empty (after TRUNCATE) and then progressively refilled.
+  */
 
-  INSERT INTO myair_hourly__new (
+  TRUNCATE TABLE myair_hourly;
+
+  INSERT INTO myair_hourly (
     userId, deviceId, firmware, date, hour,
 
     pm1_mean, pm1_min, pm1_max, pm1_valid_n,
@@ -199,15 +204,13 @@ BEGIN
     CAST(MAX(CASE WHEN d.light IS NOT NULL THEN d.light END) AS DOUBLE) AS light_max,
     SUM(CASE WHEN d.light IS NOT NULL THEN 1 ELSE 0 END) AS light_valid_n,
 
+    -- Total rows after strict dedup + user binding
     COUNT(*) AS myair_records_n
 
   FROM myair_strict_second_dedup_with_user AS d
   GROUP BY d.userId, d.deviceId, d.firmware, DATE(d.event_ts), HOUR(d.event_ts);
 
-  DROP TABLE IF EXISTS myair_hourly__old;
-  RENAME TABLE myair_hourly TO myair_hourly__old,
-               myair_hourly__new TO myair_hourly;
-  DROP TABLE IF EXISTS myair_hourly__old;
 END//
 
 DELIMITER ;
+
