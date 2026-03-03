@@ -50,6 +50,7 @@ SQL_FILES=(
   "${REPO_DIR}/etl/sql/rebuild_smartwatchhigh_hourly.sql"
   "${REPO_DIR}/etl/sql/rebuild_smartwatchlow_hourly.sql"
   "${REPO_DIR}/etl/sql/rebuild_gps_hourly.sql"
+  "${REPO_DIR}/etl/sql/active_accounts.sql"
   # ...
 )
 
@@ -78,7 +79,7 @@ for DB_NAME in "${DATABASES[@]}"; do
     fi
 
     echo "[$(ts)] Applying: $sql_file" | tee -a "$LOG_FILE"
-    mysql --database="$DB_NAME" < "$sql_file" >>"$LOG_FILE" 2>&1
+    mysql --show-warnings --database="$DB_NAME" < "$sql_file" >>"$LOG_FILE" 2>&1
     echo "[$(ts)] OK: $sql_file" | tee -a "$LOG_FILE"
   done
 done
