@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS myair_hourly (
 
 DELIMITER //
 
-CREATE OR REPLACE PROCEDURE rebuild_myair_hourly()
+CREATE OR REPLACE PROCEDURE etl_myair_hourly()
 BEGIN
   /*
     NOTE:

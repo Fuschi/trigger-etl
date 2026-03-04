@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS gps_hourly (
 
 DELIMITER //
 
-CREATE OR REPLACE PROCEDURE rebuild_gps_hourly()
+CREATE OR REPLACE PROCEDURE etl_gps_hourly()
 BEGIN
   /*
     NOTE:

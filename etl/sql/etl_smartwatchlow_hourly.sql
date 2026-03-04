@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_hourly (
 
 DELIMITER //
 
-CREATE OR REPLACE PROCEDURE rebuild_smartwatchlow_hourly()
+CREATE OR REPLACE PROCEDURE etl_smartwatchlow_hourly()
 BEGIN
   /*
     NOTE:
