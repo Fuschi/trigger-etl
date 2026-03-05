@@ -41,7 +41,7 @@ Edit the "ETL STEPS" section at the bottom of the script
 to add or remove stored procedure calls.
 
 Example:
-  run_call "rebuild_myair_hourly" "myair_hourly"
+  run_call "etl_myair_hourly" "myair_hourly"
 EOF
   exit 0
 }
@@ -126,10 +126,10 @@ run_call() {
 }
 
 # ---- ETL STEPS ----
-run_call "rebuild_myair_hourly"           "myair_hourly"
-run_call "rebuild_smartwatchhigh_hourly"  "smartwatchhigh_hourly"
-run_call "rebuild_smartwatchlow_hourly"   "smartwatchlow_hourly"
-run_call "rebuild_gps_hourly"             "gps_hourly"
+run_call "etl_myair_hourly"           "myair_hourly"
+run_call "etl_smartwatchhigh_hourly"  "smartwatchhigh_hourly"
+run_call "etl_smartwatchlow_hourly"   "smartwatchlow_hourly"
+run_call "etl_gps_hourly"             "gps_hourly"
 
 echo "[$(ts)] ETL run finished" | tee -a "$LOG_FILE"
 
