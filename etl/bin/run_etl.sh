@@ -132,3 +132,4 @@ run_call "rebuild_smartwatchlow_hourly"   "smartwatchlow_hourly"
 run_call "rebuild_gps_hourly"             "gps_hourly"
 
 echo "[$(ts)] ETL run finished" | tee -a "$LOG_FILE"
+

@@ -46,11 +46,13 @@ DATABASES=(
 # CONFIG: SQL files to apply (ORDER MATTERS)
 # =========================================================
 SQL_FILES=(
-  "${REPO_DIR}/etl/sql/rebuild_myair_hourly.sql"
-  "${REPO_DIR}/etl/sql/rebuild_smartwatchhigh_hourly.sql"
-  "${REPO_DIR}/etl/sql/rebuild_smartwatchlow_hourly.sql"
-  "${REPO_DIR}/etl/sql/rebuild_gps_hourly.sql"
-  "${REPO_DIR}/etl/sql/active_accounts.sql"
+  "${REPO_DIR}/etl/sql/etl_myair_hourly.sql"
+  "${REPO_DIR}/etl/sql/etl_smartwatchhigh_hourly.sql"
+  "${REPO_DIR}/etl/sql/etl_smartwatchlow_hourly.sql"
+  "${REPO_DIR}/etl/sql/etl_gps_hourly.sql"
+  "${REPO_DIR}/etl/sql/vw_active_accounts.sql"
+  #"${REPO_DIR}/etl/sql/vw_sleep_tidy.sql"
+  "${REPO_DIR}/etl/sql/sp_myair_daily.sql" 
   # ...
 )
 
