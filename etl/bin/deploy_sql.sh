@@ -50,11 +50,14 @@ SQL_FILES=(
   "${REPO_DIR}/etl/sql/etl_smartwatchhigh_hourly.sql"
   "${REPO_DIR}/etl/sql/etl_smartwatchlow_hourly.sql"
   "${REPO_DIR}/etl/sql/etl_gps_hourly.sql"
-  "${REPO_DIR}/etl/sql/vw_active_accounts.sql"
-  #"${REPO_DIR}/etl/sql/vw_sleep_tidy.sql"
-  "${REPO_DIR}/etl/sql/sp_myair_daily.sql" 
+  "${REPO_DIR}/etl/sql/sp_active_accounts.sql"
+  "${REPO_DIR}/etl/sql/sp_sleep_tidy.sql"
+  "${REPO_DIR}/etl/sql/sp_gps_daily.sql"
+  "${REPO_DIR}/etl/sql/sp_myair_daily.sql"
+  "${REPO_DIR}/etl/sql/sp_smartwatchhigh_daily.sql"
+  "${REPO_DIR}/etl/sql/sp_smartwatchlow_daily.sql"
   # ...
-)
+) 
 
 echo "====================================================" >>"$LOG_FILE"
 echo "[$(ts)] SQL deploy started" | tee -a "$LOG_FILE"
@@ -73,6 +76,7 @@ done
 for DB_NAME in "${DATABASES[@]}"; do
   echo "----------------------------------------------------" | tee -a "$LOG_FILE"
   echo "[$(ts)] Deploying to: $DB_NAME" | tee -a "$LOG_FILE"
+  echo "" | tee -a "$LOG_FILE"
 
   for sql_file in "${SQL_FILES[@]}"; do
     if [[ ! -f "$sql_file" ]]; then
@@ -81,8 +85,16 @@ for DB_NAME in "${DATABASES[@]}"; do
     fi
 
     echo "[$(ts)] Applying: $sql_file" | tee -a "$LOG_FILE"
-    mysql --show-warnings --database="$DB_NAME" < "$sql_file" >>"$LOG_FILE" 2>&1
-    echo "[$(ts)] OK: $sql_file" | tee -a "$LOG_FILE"
+
+    if mysql --show-warnings --database="$DB_NAME" < "$sql_file" 2>&1 | tee -a "$LOG_FILE"; then
+      echo "[$(ts)] OK: $sql_file" | tee -a "$LOG_FILE"
+    else
+      rc=${PIPESTATUS[0]}
+      echo "[$(ts)] ERROR (exit=$rc): $sql_file" | tee -a "$LOG_FILE"
+      exit "$rc"
+    fi
+
+    echo "" | tee -a "$LOG_FILE"
   done
 done
 
