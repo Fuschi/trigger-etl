@@ -111,7 +111,6 @@ Examples:
 - `sp_smartwatchhigh_daily`
 - `sp_smartwatchlow_daily`
 - `sp_sleep_tidy`
-- `sp_active_accounts`
 
 These procedures:
 
@@ -120,6 +119,17 @@ These procedures:
 - return result sets without creating persistent tables
 
 This design keeps the database lightweight while allowing flexible analytical queries.
+
+---
+
+### Metadata procedure
+
+The repository also includes a small metadata procedure:
+
+- `sp_active_accounts`
+
+This procedure returns the list of **active accounts used in the analysis**,  
+including a derived `country` field, and can be used to filter or join analytical queries by subject metadata.
 
 
 ------------------------------------------------------------------------
