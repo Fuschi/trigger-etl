@@ -3,7 +3,7 @@ DELIMITER //
 CREATE OR REPLACE PROCEDURE sp_active_accounts()
 BEGIN
   SELECT
-      id,
+      id AS userId,
       UPPER(LEFT(email, 2)) AS country,
       email,
       last_login
