@@ -110,7 +110,6 @@ BEGIN
     CAST(s.sleepquality        AS DOUBLE) AS sleepquality,
     CAST(s.fallsleepefficiency AS DOUBLE) AS fallsleepefficiency,
 
-    s.created_at
 
   FROM sleep_daily AS s
   WHERE (p_date_from IS NULL OR s.date >= p_date_from)
