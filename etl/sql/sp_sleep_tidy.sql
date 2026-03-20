@@ -108,7 +108,7 @@ BEGIN
     CAST(s.lightsleep          AS DOUBLE) AS lightsleep,
     CAST(s.deepsleep           AS DOUBLE) AS deepsleep,
     CAST(s.sleepquality        AS DOUBLE) AS sleepquality,
-    CAST(s.fallsleepefficiency AS DOUBLE) AS fallsleepefficiency,
+    CAST(s.fallsleepefficiency AS DOUBLE) AS fallsleepefficiency
 
 
   FROM sleep_daily AS s
