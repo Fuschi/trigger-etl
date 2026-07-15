@@ -3,7 +3,7 @@
 --
 -- Clean and deduplicated base table for GPS data.
 -- No temporal aggregation.
--- One row per valid sensor reading at minute granularity.
+-- One row per retained sensor reading at minute granularity.
 --
 -- Operations:
 --   1. Second-level deduplication
@@ -12,7 +12,7 @@
 --
 --   2. Minute-level deduplication
 --      Discard any minute bucket containing more than one
---      valid reading after second-level deduplication
+--      retained reading after second-level deduplication
 --
 --   3. User binding
 --      Keep only deviceIds mapped to exactly one userId
@@ -24,11 +24,18 @@
 --        10:05:00 <= event_ts < 10:10:00 -> 10:05:00
 --
 --   5. Validity filters
---        longitude, latitude:
---          both set to NULL unless longitude is within
---          [-180, 180] and latitude is within [-90, 90]
---        accuracy:
---          preserved as recorded; no validity filter
+--      longitude, latitude:
+--        both set to NULL unless longitude is within
+--        [-180, 180] and latitude is within [-90, 90]
+--
+--      accuracy:
+--        positive values are preserved
+--        non-positive values, including the -1 sentinel,
+--        are treated as unavailable and set to NULL
+--
+-- Accuracy availability does not determine coordinate
+-- validity. Valid coordinates are retained even when
+-- accuracy is unavailable.
 -- =========================================================
 
 
@@ -46,9 +53,9 @@ CREATE TABLE IF NOT EXISTS gps_tidy (
   minute      TINYINT  NOT NULL,
   `second`    TINYINT  NOT NULL,
 
-  longitude DOUBLE NULL,  -- valid coordinate pair: longitude [-180, 180]
-  latitude  DOUBLE NULL,  -- valid coordinate pair: latitude [-90, 90]
-  accuracy  DOUBLE NULL,  -- preserved as recorded; no validity filter
+  longitude DOUBLE NULL,
+  latitude  DOUBLE NULL,
+  accuracy  DOUBLE NULL,
 
   PRIMARY KEY (
     deviceId,
@@ -170,18 +177,6 @@ BEGIN
   WITH
 
   -- Step 1: second-level deduplication
-  --
-  -- min_ca:
-  --   earliest created_at for each
-  --   (deviceId, firmware, event_ts)
-  --
-  -- cnt_ca:
-  --   number of rows sharing the same created_at within
-  --   the same (deviceId, firmware, event_ts)
-  --
-  -- Keep only rows where:
-  --   created_at = min_ca
-  --   cnt_ca = 1
   gps_second_dedup AS (
     SELECT
       g.*,
@@ -206,12 +201,6 @@ BEGIN
 
 
   -- Step 2: minute-level deduplication
-  --
-  -- Count the valid second-level readings falling within
-  -- each minute bucket.
-  --
-  -- Minute buckets with cnt_min > 1 are considered
-  -- ambiguous and are discarded in the final WHERE clause.
   gps_dedup AS (
     SELECT
       d.*,
@@ -232,10 +221,7 @@ BEGIN
   ),
 
 
-  -- Step 3: user binding
-  --
-  -- Keep only deviceIds associated with exactly one userId.
-  -- Devices associated with multiple users are excluded.
+  -- Step 3: keep devices associated with one user only
   user_gps_unique_device AS (
     SELECT
       deviceId,
@@ -249,13 +235,12 @@ BEGIN
   )
 
 
-  -- Final cleaned and deduplicated dataset
   SELECT
-    u.userId     AS userId,
-    d.deviceId   AS deviceId,
-    d.firmware   AS firmware,
-    d.event_ts   AS event_ts,
-    d.created_at AS created_at,
+    u.userId,
+    d.deviceId,
+    d.firmware,
+    d.event_ts,
+    d.created_at,
 
     -- Beginning of the fixed five-minute interval
     TIMESTAMP(
@@ -272,9 +257,7 @@ BEGIN
     MINUTE(d.event_ts) AS minute,
     SECOND(d.event_ts) AS `second`,
 
-    -- Longitude and latitude are treated as a coordinate pair.
-    -- If either coordinate is outside its valid geographic
-    -- range, both coordinates are set to NULL.
+    -- Longitude and latitude are treated as a pair.
     CASE
       WHEN d.longitude BETWEEN -180 AND 180
        AND d.latitude  BETWEEN -90  AND 90
@@ -289,8 +272,13 @@ BEGIN
       ELSE NULL
     END AS latitude,
 
-    -- No validity filter is applied to accuracy.
-    d.accuracy AS accuracy
+    -- Non-positive accuracy values are unavailable.
+    -- Coordinate validity remains independent of accuracy.
+    CASE
+      WHEN d.accuracy > 0
+      THEN d.accuracy
+      ELSE NULL
+    END AS accuracy
 
   FROM gps_dedup AS d
 
