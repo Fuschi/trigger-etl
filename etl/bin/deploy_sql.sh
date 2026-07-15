@@ -23,9 +23,11 @@ This script applies the SQL files listed in SQL_FILES to both databases:
   - triggerIO-dev
   - triggerIO
 
-It deploys the table definitions and stored procedures used to generate
-cleaned and deduplicated tidy datasets while preserving the original
-temporal resolution of the observations.
+It deploys the table definitions and stored procedures used to generate:
+  - cleaned and deduplicated tidy datasets
+  - materialized five-minute sensor aggregations
+
+Development is deployed first, followed by the main database.
 
 Edit DATABASES and SQL_FILES inside the script to control what is deployed.
 The SQL files are applied in the specified order.
@@ -58,15 +60,27 @@ DATABASES=(
 
 # =========================================================
 # CONFIG: SQL files to apply
-# ORDER MATTERS
+#
+# ORDER MATTERS:
+#   1. Shared stored procedures
+#   2. Tidy ETL definitions
+#   3. Five-minute aggregation definitions
 # =========================================================
 SQL_FILES=(
   "${REPO_DIR}/etl/sql/sp_active_accounts.sql"
+
+  # Cleaned and deduplicated base tables
   "${REPO_DIR}/etl/sql/etl_myair_tidy.sql"
   "${REPO_DIR}/etl/sql/etl_smartwatchhigh_tidy.sql"
   "${REPO_DIR}/etl/sql/etl_smartwatchlow_tidy.sql"
   "${REPO_DIR}/etl/sql/etl_gps_tidy.sql"
   "${REPO_DIR}/etl/sql/etl_sleep_tidy.sql"
+
+  # Materialized five-minute aggregations
+  "${REPO_DIR}/etl/sql/etl_myair_5min.sql"
+  "${REPO_DIR}/etl/sql/etl_smartwatchhigh_5min.sql"
+  "${REPO_DIR}/etl/sql/etl_smartwatchlow_5min.sql"
+  "${REPO_DIR}/etl/sql/etl_gps_5min.sql"
 )
 
 # =========================================================
@@ -107,7 +121,7 @@ for DB_NAME in "${DATABASES[@]}"; do
     if mysql \
       --show-warnings \
       --database="$DB_NAME" \
-      < "$sql_file" \
+      <"$sql_file" \
       2>&1 | tee -a "$LOG_FILE"
     then
       echo "[$(ts)] OK: ${sql_file}" | tee -a "$LOG_FILE"
