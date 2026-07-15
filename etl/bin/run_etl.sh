@@ -4,7 +4,8 @@ set -euo pipefail
 # =========================================================
 # run_etl.sh
 #
-# Executes ETL stored procedures and logs:
+# Executes ETL stored procedures that generate cleaned and
+# deduplicated tidy tables, and logs:
 #   - execution time
 #   - final row count (if table provided)
 #
@@ -25,7 +26,8 @@ usage() {
   cat <<'EOF'
 run_etl.sh
 
-Executes predefined ETL stored procedures and logs:
+Executes predefined ETL stored procedures that generate cleaned and
+deduplicated tidy tables, and logs:
   - execution time
   - final row count (if table provided)
 
@@ -41,7 +43,7 @@ Edit the "ETL STEPS" section at the bottom of the script
 to add or remove stored procedure calls.
 
 Example:
-  run_call "etl_myair_hourly" "myair_hourly"
+  run_call "etl_myair_tidy" "myair_tidy"
 EOF
   exit 0
 }
@@ -60,7 +62,10 @@ while [[ $# -gt 0 ]]; do
       usage
       ;;
     --env)
-      [[ -n "${2:-}" ]] || { echo "Missing value for --env" >&2; exit 2; }
+      [[ -n "${2:-}" ]] || {
+        echo "Missing value for --env" >&2
+        exit 2
+      }
       ENV_NAME="$2"
       shift 2
       ;;
@@ -78,7 +83,10 @@ DB_DEV="triggerIO-dev"
 case "$ENV_NAME" in
   main) DB_NAME="$DB_MAIN" ;;
   dev)  DB_NAME="$DB_DEV"  ;;
-  *)    echo "Invalid --env value: $ENV_NAME (expected: main|dev)" >&2; exit 2 ;;
+  *)
+    echo "Invalid --env value: $ENV_NAME (expected: main|dev)" >&2
+    exit 2
+    ;;
 esac
 
 # ---- paths/logs ----
@@ -89,12 +97,18 @@ mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/run_etl_$(date +'%Y%m%d').log"
 
 echo "====================================================" >>"$LOG_FILE"
-echo "[$(ts)] ETL run started (env=${ENV_NAME}, db=${DB_NAME})" | tee -a "$LOG_FILE"
+echo "[$(ts)] ETL run started (env=${ENV_NAME}, db=${DB_NAME})" \
+  | tee -a "$LOG_FILE"
 
 # ---- lock ----
 LOCK_FILE="${LOG_DIR}/run_etl.lock"
 exec 9>"$LOCK_FILE"
-flock -n 9 || { echo "[$(ts)] Another ETL is running. Exiting." | tee -a "$LOG_FILE"; exit 0; }
+
+flock -n 9 || {
+  echo "[$(ts)] Another ETL is running. Exiting." \
+    | tee -a "$LOG_FILE"
+  exit 0
+}
 
 # ---- runner ----
 run_call() {
@@ -107,29 +121,45 @@ run_call() {
   local start end
   start=$(date +%s)
 
-  # Call procedure (db selected, but we also schema-qualify for clarity)
-  if ! mysql --database="$DB_NAME" -e "CALL ${DB_NAME}.${proc}();" >>"$LOG_FILE" 2>&1; then
+  # The target database is already selected with --database.
+  if ! mysql \
+    --database="$DB_NAME" \
+    -e "CALL \`${proc}\`();" \
+    >>"$LOG_FILE" 2>&1
+  then
     die "CALL ${DB_NAME}.${proc}() failed"
   fi
 
   end=$(date +%s)
-  echo "[$(ts)] Duration: $((end - start))s" | tee -a "$LOG_FILE"
+
+  echo "[$(ts)] Duration: $((end - start))s" \
+    | tee -a "$LOG_FILE"
 
   if [[ -n "$table" ]]; then
     local rows
-    if ! rows=$(mysql --database="$DB_NAME" --batch --skip-column-names \
-      -e "SELECT COUNT(*) FROM ${DB_NAME}.${table};" 2>>"$LOG_FILE"); then
+
+    if ! rows=$(
+      mysql \
+        --database="$DB_NAME" \
+        --batch \
+        --skip-column-names \
+        -e "SELECT COUNT(*) FROM \`${table}\`;" \
+        2>>"$LOG_FILE"
+    )
+    then
       die "Row count query failed for ${DB_NAME}.${table}"
     fi
-    echo "[$(ts)] ${DB_NAME}.${table} rows: ${rows}" | tee -a "$LOG_FILE"
+
+    echo "[$(ts)] ${DB_NAME}.${table} rows: ${rows}" \
+      | tee -a "$LOG_FILE"
   fi
 }
 
 # ---- ETL STEPS ----
-run_call "etl_myair_hourly"           "myair_hourly"
-run_call "etl_smartwatchhigh_hourly"  "smartwatchhigh_hourly"
-run_call "etl_smartwatchlow_hourly"   "smartwatchlow_hourly"
-run_call "etl_gps_hourly"             "gps_hourly"
+run_call "etl_myair_tidy"           "myair_tidy"
+run_call "etl_smartwatchhigh_tidy"  "smartwatchhigh_tidy"
+run_call "etl_smartwatchlow_tidy"   "smartwatchlow_tidy"
+run_call "etl_gps_tidy"             "gps_tidy"
+run_call "etl_sleep_tidy"           "sleep_tidy"
 
 echo "[$(ts)] ETL run finished" | tee -a "$LOG_FILE"
-
