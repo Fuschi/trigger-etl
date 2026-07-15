@@ -215,4 +215,10 @@ run_call "etl_smartwatchhigh_5min"  "smartwatchhigh_5min"
 run_call "etl_smartwatchlow_5min"   "smartwatchlow_5min"
 run_call "etl_gps_5min"             "gps_5min"
 
+# ---- HOURLY TABLES ----
+run_call "etl_myair_hourly"           "myair_hourly"
+run_call "etl_smartwatchhigh_hourly"  "smartwatchhigh_hourly"
+run_call "etl_smartwatchlow_hourly"   "smartwatchlow_hourly"
+run_call "etl_gps_hourly"             "gps_hourly"
+
 echo "[$(ts)] ETL run finished" | tee -a "$LOG_FILE"
