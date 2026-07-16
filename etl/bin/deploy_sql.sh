@@ -87,6 +87,13 @@ SQL_FILES=(
   "${REPO_DIR}/etl/sql/etl_smartwatchhigh_hourly.sql"
   "${REPO_DIR}/etl/sql/etl_smartwatchlow_hourly.sql"
   "${REPO_DIR}/etl/sql/etl_gps_hourly.sql"
+
+  # Materialized daily aggregations
+  "${REPO_DIR}/etl/sql/etl_myair_daily.sql"
+  "${REPO_DIR}/etl/sql/etl_smartwatchhigh_daily.sql"
+  "${REPO_DIR}/etl/sql/etl_smartwatchlow_daily.sql"
+  "${REPO_DIR}/etl/sql/etl_gps_daily.sql"
+
 )
 
 # =========================================================
