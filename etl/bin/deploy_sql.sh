@@ -67,7 +67,7 @@ DATABASES=(
 #   3. Five-minute aggregation definitions
 # =========================================================
 SQL_FILES=(
-  "${REPO_DIR}/etl/sql/sp_active_accounts.sql"
+  "${REPO_DIR}/etl/sql/vw_active_accounts.sql"
 
   # Cleaned and deduplicated base tables
   "${REPO_DIR}/etl/sql/etl_myair_tidy.sql"
