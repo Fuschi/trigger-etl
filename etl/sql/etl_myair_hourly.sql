@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS myair_hourly (
   light_min    DOUBLE NULL,
   light_max    DOUBLE NULL,
   light_raw_n  SMALLINT UNSIGNED NOT NULL,
-  light_5min_n TINYINT UNSIGNED NOT NULL
+  light_5min_n TINYINT UNSIGNED NOT NULL,
 
 
   PRIMARY KEY (
@@ -259,7 +259,7 @@ BEGIN
     light_min    DOUBLE NULL,
     light_max    DOUBLE NULL,
     light_raw_n  SMALLINT UNSIGNED NOT NULL,
-    light_5min_n TINYINT UNSIGNED NOT NULL
+    light_5min_n TINYINT UNSIGNED NOT NULL,
 
 
     PRIMARY KEY (
