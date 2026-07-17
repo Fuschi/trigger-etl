@@ -9,10 +9,10 @@
 -- two characters of the email address.
 -- =========================================================
 
-CREATE VIEW IF NOT EXISTS active_accounts AS
+CREATE OR REPLACE VIEW active_accounts AS
 SELECT
   id AS userId,
-  UPPER(LEFT(email, 2)) AS country,
+  UPPER(LEFT(email, 2)) AS nationality,
   email,
   last_login
 FROM accounts
