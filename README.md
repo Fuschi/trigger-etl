@@ -2,6 +2,18 @@
 
 MariaDB ETL pipeline for cleaning, deduplicating and temporally aggregating environmental, wearable, GPS and sleep data collected within the TRIGGER project.
 
+## Project context and related resources
+
+This repository supports data processing activities within [TRIGGER — SoluTions foR mItiGatinG climate-induced hEalth thReats](https://project-trigger.eu/), a Horizon Europe project investigating the relationships between climate, human health and ecosystems.
+
+Related operational resources:
+
+- [TriggerIO service](https://trigger-io.difa.unibo.it/) — DIFA-hosted service for the management of data collected by the TRIGGER mobile application and connected clients;
+- [TriggerIO API documentation](https://trigger-io.difa.unibo.it/apiDocs.html) — REST endpoints for authentication, data insertion, data extraction and stored-procedure access;
+- [pytrigger](https://github.com/Nico-Curti/pytrigger/) — Python and command-line client developed by Nico Curti for authenticated access to TriggerIO datasets.
+
+This ETL repository operates directly on the MariaDB data layer and is complementary to the API and Python client listed above.
+
 ## Architecture
 
 ```text
