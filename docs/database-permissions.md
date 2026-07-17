@@ -1,27 +1,27 @@
 # Database permissions and safety model
 
-## Objective
+## Scope
 
 The ETL account must be able to:
 
-- read raw TRIGGER tables;
-- create and execute ETL routines;
-- create views;
-- rebuild only managed derived tables;
-- operate freely in the development database.
+* read raw TRIGGER tables;
+* create and execute ETL routines;
+* rebuild ETL-managed derived tables;
+* create new views;
+* operate freely in `triggerIO-dev`.
 
-It must not have schema-wide privileges that allow raw tables in `triggerIO` to be updated, deleted, altered or dropped.
+It must not have schema-wide privileges that allow raw production tables to be modified, altered or dropped.
 
-## Database roles
+## Database access
 
-| Database | Intended access |
-|---|---|
-| `triggerIO-dev` | development and testing; broad write and DDL access |
-| `triggerIO` | read-only access to raw data; write and DDL access restricted to ETL-managed objects |
+| Database        | Access model                                                                     |
+| --------------- | -------------------------------------------------------------------------------- |
+| `triggerIO-dev` | broad write and DDL access for development and testing                           |
+| `triggerIO`     | read-only access to raw tables; write and DDL access only on managed ETL objects |
 
-## Main database privileges
+## Production schema privileges
 
-The following schema-level privileges support reading data and defining ETL objects without granting schema-wide data modification:
+Recommended schema-level privileges:
 
 ```sql
 GRANT
@@ -37,7 +37,7 @@ ON `triggerIO`.*
 TO '<etl_user>'@'<host>';
 ```
 
-Do **not** grant the following privileges on `triggerIO` as a whole:
+Do not grant schema-wide:
 
 ```text
 INSERT
@@ -48,11 +48,9 @@ ALTER
 INDEX
 ```
 
-Those privileges must be restricted to ETL-managed tables.
+These privileges must be restricted to explicitly managed ETL tables.
 
 ## ETL-managed tables
-
-The current derived tables are:
 
 ```text
 myair_tidy
@@ -77,9 +75,7 @@ smartwatchlow_daily
 gps_daily
 ```
 
-Each managed table requires object-specific privileges. The current procedures perform full rebuilds, so `DROP`, `CREATE` and `INSERT` are essential. `ALTER` and `INDEX` are retained for controlled schema maintenance.
-
-Example:
+Each managed table requires object-specific privileges:
 
 ```sql
 GRANT
@@ -94,35 +90,64 @@ ON `triggerIO`.`myair_tidy`
 TO '<etl_user>'@'<host>';
 ```
 
-Apply the same grant only to each table listed above.
+Apply the same grant only to the managed tables listed above.
 
-Schema-level `CREATE` is required because procedures recreate tables after dropping them. Table-specific grants remain associated with the table name and continue to apply when the table is recreated.
+Schema-level `CREATE` is still required because ETL procedures recreate tables after dropping them.
 
 ## Raw-table protection
 
-Raw tables are protected because the ETL account has only `SELECT` at schema level and receives write or DDL privileges only on explicitly listed derived tables.
+Raw tables receive only schema-level `SELECT`.
 
-The account must not receive schema-wide `DROP`, `ALTER`, `INSERT`, `UPDATE`, `DELETE` or `INDEX` privileges on `triggerIO`.
+They must never receive object-specific:
 
-> A schema-wide `INDEX` grant still allows indexes on raw tables to be created or removed. For a strict safety model, grant `INDEX` only on ETL-managed tables.
+```text
+INSERT
+UPDATE
+DELETE
+DROP
+ALTER
+INDEX
+```
+
+privileges.
 
 ## Views
 
-Creating a new view requires `CREATE VIEW`. Inspecting it requires `SHOW VIEW`.
-
-`CREATE OR REPLACE VIEW` may also require permission to replace the existing view. For `active_accounts`, either grant `DROP` only on that view:
+The ETL account can create and inspect views through:
 
 ```sql
-GRANT DROP
-ON `triggerIO`.`active_accounts`
+GRANT
+  CREATE VIEW,
+  SHOW VIEW
+ON `triggerIO`.*
 TO '<etl_user>'@'<host>';
 ```
 
-or use `CREATE VIEW IF NOT EXISTS`. The latter is safer but does not update an existing view definition.
+It must not receive schema-wide `DROP`, because MariaDB does not distinguish between dropping views and dropping tables at that privilege level.
+
+Therefore:
+
+* new views can be created by the ETL account;
+* existing production views must be replaced or removed by the database administrator or an authorized deployment account;
+* view changes must first be tested in `triggerIO-dev`.
+
+Example managed view:
+
+```sql
+CREATE OR REPLACE VIEW active_accounts AS
+SELECT
+  id AS userId,
+  UPPER(LEFT(email, 2)) AS nationality,
+  email,
+  last_login
+FROM accounts
+WHERE last_login IS NOT NULL
+  AND UPPER(LEFT(email, 2)) IN ('CH', 'DE', 'GR', 'IT');
+```
 
 ## Development database
 
-The development database can use broader privileges because it is the validation environment:
+The development database can use broader privileges:
 
 ```sql
 GRANT ALL PRIVILEGES
@@ -130,17 +155,17 @@ ON `triggerIO-dev`.*
 TO '<etl_user>'@'<host>';
 ```
 
-Production SQL changes should be deployed and tested on `triggerIO-dev` before being applied to `triggerIO`.
+All ETL schema changes should be tested there before production deployment.
 
 ## Verification
 
-Inspect the effective grants for the connected account:
+Inspect effective grants:
 
 ```sql
 SHOW GRANTS FOR CURRENT_USER;
 ```
 
-Inspect privileges granted on the main schema:
+Inspect object-specific privileges:
 
 ```sql
 SELECT
@@ -153,7 +178,7 @@ WHERE TABLE_SCHEMA = 'triggerIO'
 ORDER BY TABLE_NAME, PRIVILEGE_TYPE;
 ```
 
-Review schema-level privileges:
+Inspect schema-level privileges:
 
 ```sql
 SELECT
@@ -165,6 +190,10 @@ WHERE TABLE_SCHEMA IN ('triggerIO', 'triggerIO-dev')
 ORDER BY TABLE_SCHEMA, PRIVILEGE_TYPE;
 ```
 
-## Safety rule
+## Safety rules
 
-Any new ETL materialized table must be added explicitly to the managed-table privilege list. Raw tables must never be added to that list.
+* Grant write and DDL privileges only on managed ETL tables.
+* Never grant schema-wide `DROP`, `ALTER`, `INSERT`, `UPDATE`, `DELETE` or `INDEX` on `triggerIO`.
+* Test all schema changes in `triggerIO-dev`.
+* Deploy changes to existing production views through the database administrator.
+
