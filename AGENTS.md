@@ -14,6 +14,8 @@ asks for it.
 
 - The previous ETL implementation was intentionally removed on 2026-08-19.
 - The first rebuilt component is the small `gps_tidy` implementation.
+- `myair_tidy` is the second rebuilt definition; it still requires raw-schema,
+  aggregate data and deployment validation before it is considered complete.
 - No database deployment is represented by the current repository state.
 - Historical files remain recoverable from Git history, but must not be copied
   back without reviewing their assumptions.

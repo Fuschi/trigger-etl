@@ -288,22 +288,25 @@ ORDER BY GRANTEE, ROUTINE_NAME, PRIVILEGE_TYPE;
 - Validate output keys and row counts before an atomic swap.
 - Record any privilege change outside credentials and secrets.
 
-## Objects used by the first GPS tidy component
+## Objects used by the rebuilt tidy components
 
-The first implemented layer narrows the generic placeholders above to these
-managed objects:
+The implemented tidy definitions narrow the generic placeholders above to
+these managed objects:
 
 ```text
 gps_tidy
 etl_gps_tidy
+myair_tidy
+etl_myair_tidy
 ```
 
-Its source boundary is read-only `SELECT` on `gps` and `user_gps`. Execution
-requires `SELECT`, `INSERT` and `DELETE` on `gps_tidy`. The procedure creates
-one temporary table of affected dates, so the invoking privilege model must
-also account for `CREATE TEMPORARY TABLES`.
+Their source boundaries are read-only `SELECT` on `gps`, `user_gps`, `myair`
+and `user_myair`. Execution requires `SELECT`, `INSERT` and `DELETE` on the
+corresponding managed tidy table. Each procedure creates one temporary table
+of affected dates, so the invoking privilege model must also account for
+`CREATE TEMPORARY TABLES`.
 
 The procedures use `SQL SECURITY INVOKER`: the calling account, rather than an
 implicit privileged definer, must possess the required runtime privileges.
-Before granting any permission, compare the exact operations in
-`etl/sql/gps_tidy.sql` with the chosen owner/runtime account separation.
+Before granting any permission, compare the exact operations in the relevant
+file under `etl/sql/` with the chosen owner/runtime account separation.

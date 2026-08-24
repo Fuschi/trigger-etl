@@ -9,9 +9,9 @@ one piece at a time. Historical code remains available through Git history.
 
 ## Current state
 
-The first complete component is now implemented: `gps_tidy` turns raw GPS
-readings into one unambiguous, technically valid observation per participant
-and UTC minute.
+The first complete and operationally validated component is `gps_tidy`: it
+turns raw GPS readings into one unambiguous, technically valid observation per
+participant and UTC minute.
 
 It includes:
 
@@ -21,7 +21,10 @@ It includes:
 - incremental selection based on `MAX(gps_tidy.created_at)`;
 - transactional rebuilding of all affected event dates.
 
-No five-minute GPS aggregation or other sensor stream has been implemented yet.
+The next component, `myair_tidy`, now has a reviewable SQL definition based on
+the same full-or-incremental model. Its raw schema, historical validity limits
+and aggregate row-loss diagnostics still require primary-database validation
+before deployment. No five-minute, hourly or daily layer has been rebuilt yet.
 
 ## Intended direction
 
@@ -58,12 +61,15 @@ audit are in [AGENTS.md](AGENTS.md).
 The minimum database privileges and the raw-table safety boundary are described
 in [docs/database-permissions.md](docs/database-permissions.md).
 
-The GPS rules, limitations and pre-deployment checks are in
-[docs/gps-tidy-specification.md](docs/gps-tidy-specification.md).
+The stream-specific rules and limitations are in:
+
+- [docs/gps-tidy-specification.md](docs/gps-tidy-specification.md);
+- [docs/myair-tidy-specification.md](docs/myair-tidy-specification.md).
 
 ## Next step
 
-The next operational step is a read-only source-schema verification. Automated
-tests are intentionally deferred while the implementation is reviewed piece by
-piece. Applying or executing the SQL against a database remains a separate,
-explicitly confirmed action.
+The next operational step is read-only verification of the MyAir source and
+mapping schemas, followed by aggregate validation of the historical cleaning
+limits. Automated tests are intentionally deferred while the implementation is
+reviewed piece by piece. Applying or executing SQL against a database remains
+a separate, explicitly confirmed action.
