@@ -184,16 +184,17 @@ is executed against the representative database.
 
 ## Database objects
 
-The implementation uses only:
+The implementation uses only these persistent objects:
 
 ```text
 myair_tidy
 etl_myair_tidy()
 ```
 
-It creates one connection-local temporary table of affected event dates. No
-separate watermark, rejected-row table or persistent run-history table is
-created. Scheduled executions must not overlap.
+It also creates three connection-local temporary helper tables: affected event
+dates, unambiguous device mappings and participants selected for the current
+run. No shadow table, separate watermark, rejected-row table or persistent
+run-history table is created. Scheduled executions must not overlap.
 
 ## Full and incremental refresh
 
@@ -203,13 +204,25 @@ The procedure has no parameters:
 CALL etl_myair_tidy();
 ```
 
-When `myair_tidy` is empty, the call performs a full build. Otherwise it uses
+When `myair_tidy` is empty, the call performs a full build. It processes one
+participant at a time and commits after that participant is complete. This
+bounds the number of InnoDB locks held by the full build and uses the existing
+raw index whose first column is `deviceId`. If any full-build batch fails, the
+error handler rolls back that batch and truncates the partial tidy output so
+the next call starts in full mode again. Full error cleanup therefore requires
+`DROP` on the managed `myair_tidy` table.
+
+When `myair_tidy` is populated, the procedure uses
 `MAX(myair_tidy.created_at)` as its ingestion watermark, finds raw rows with a
 strictly greater `created_at` and completely rebuilds every event date touched
-by those rows.
+by those rows. The incremental delete and all participant inserts remain in
+one InnoDB transaction, so an SQL failure rolls back the complete incremental
+run.
 
-One raw maximum `created_at` is frozen at the start of each run. The delete and
-insert occur in one InnoDB transaction, so an SQL failure rolls both back.
+Both modes freeze one raw maximum `created_at` at the start. The procedure
+resolves the device map once per call and processes all devices belonging to a
+participant together, so participant-minute ambiguity is still evaluated
+across devices and firmware versions.
 
 ## Incremental limitations
 
@@ -221,6 +234,10 @@ insert occur in one InnoDB transaction, so an SQL failure rolls both back.
   those rows are reconsidered on the next run.
 - A change made only to `user_myair` is not detectable from MyAir ingestion
   time.
+- A full build is intentionally not one atomic transaction. Ordinary SQL
+  errors trigger automatic cleanup, but a server crash or forced connection
+  termination may prevent the error handler from running. After such an
+  interruption, empty `myair_tidy` explicitly before retrying the full build.
 - Deliberately requesting another full refresh requires emptying the managed
   table before the next call.
 - An existing historical `myair_tidy` has an incompatible schema and must not

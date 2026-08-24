@@ -302,8 +302,11 @@ etl_myair_tidy
 
 Their source boundaries are read-only `SELECT` on `gps`, `user_gps`, `myair`
 and `user_myair`. Execution requires `SELECT`, `INSERT` and `DELETE` on the
-corresponding managed tidy table. Each procedure creates one temporary table
-of affected dates, so the invoking privilege model must also account for
+corresponding managed tidy table. The MyAir full-build error handler also uses
+`TRUNCATE TABLE myair_tidy` to remove participant batches committed before a
+later batch failed, so its caller additionally needs object-specific `DROP` on
+`myair_tidy`. The procedures create connection-local temporary helper tables,
+so the invoking privilege model must also account for
 `CREATE TEMPORARY TABLES`.
 
 The procedures use `SQL SECURITY INVOKER`: the calling account, rather than an
