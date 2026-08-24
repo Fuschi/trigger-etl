@@ -1,81 +1,110 @@
 # Database permissions and safety model
 
-## Scope
+## Purpose
 
-The ETL account must be able to:
+This document records the privileges needed by the account used to inspect,
+build and run the TRIGGER ETL.
 
-* read raw TRIGGER tables;
-* create and execute ETL routines;
-* rebuild ETL-managed derived tables;
-* create new views;
-* operate freely in `triggerIO-dev`.
+Database names and internal environment topology intentionally remain outside
+the repository. Replace the placeholders below using local operational
+configuration:
 
-It must not have schema-wide privileges that allow raw production tables to be modified, altered or dropped.
+```text
+<database>       target TRIGGER database
+<etl_user>       ETL account name
+<host>           allowed client host
+<managed_table>  table created and owned by the ETL
+<managed_view>   view created and owned by the ETL
+<procedure>      stored procedure created and owned by the ETL
+```
 
-## Database access
+The primary safety boundary is simple:
 
-| Database        | Access model                                                                     |
-| --------------- | -------------------------------------------------------------------------------- |
-| `triggerIO-dev` | broad write and DDL access for development and testing                           |
-| `triggerIO`     | read-only access to raw tables; write and DDL access only on managed ETL objects |
+- raw source tables are read-only;
+- only explicitly managed ETL objects may be changed;
+- database-wide destructive or write privileges should be avoided;
+- effective grants must be inspected before the first database-changing step.
 
-## Production schema privileges
+## Read-only inspection
 
-Recommended schema-level privileges:
+Designing tidy rules requires inspecting schemas, value distributions, key
+cardinalities and edge cases in the representative database.
+
+The minimum data privilege is:
 
 ```sql
-GRANT
-  SELECT,
-  CREATE,
-  CREATE TEMPORARY TABLES,
-  EXECUTE,
-  CREATE VIEW,
-  SHOW VIEW,
-  CREATE ROUTINE,
-  ALTER ROUTINE
-ON `triggerIO`.*
+GRANT SELECT
+ON `<database>`.*
 TO '<etl_user>'@'<host>';
 ```
 
-Do not grant schema-wide:
+Schema-wide `SELECT` allows the account to inspect raw tables but does not allow
+their contents or definitions to be changed.
 
-```text
-INSERT
-UPDATE
-DELETE
-DROP
-ALTER
-INDEX
+If view definitions must be inspected, also grant:
+
+```sql
+GRANT SHOW VIEW
+ON `<database>`.*
+TO '<etl_user>'@'<host>';
 ```
 
-These privileges must be restricted to explicitly managed ETL tables.
+Metadata in `information_schema` is normally visible according to the
+account's privileges. No global administrative privilege is required for the
+planned ETL work.
 
-## ETL-managed tables
+## Creating stored procedures
 
-```text
-myair_tidy
-smartwatchhigh_tidy
-smartwatchlow_tidy
-gps_tidy
-sleep_tidy
+The account that creates stored procedures requires:
 
-myair_5min
-smartwatchhigh_5min
-smartwatchlow_5min
-gps_5min
-
-myair_hourly
-smartwatchhigh_hourly
-smartwatchlow_hourly
-gps_hourly
-
-myair_daily
-smartwatchhigh_daily
-smartwatchlow_daily
-gps_daily
+```sql
+GRANT
+  CREATE ROUTINE,
+  ALTER ROUTINE
+ON `<database>`.*
+TO '<etl_user>'@'<host>';
 ```
 
-Each managed table requires object-specific privileges:
+`CREATE ROUTINE` permits procedure creation. `ALTER ROUTINE` permits changing
+or dropping routines. MariaDB normally grants `ALTER ROUTINE` and `EXECUTE`
+automatically to a routine creator, but explicit grants make the intended
+operational permission model visible and do not depend on the
+`automatic_sp_privileges` server setting.
+
+If the same account calls the procedures, grant:
+
+```sql
+GRANT EXECUTE
+ON `<database>`.*
+TO '<etl_user>'@'<host>';
+```
+
+Avoid declaring a different `DEFINER` unless the account and privilege model
+have been deliberately designed. Procedures should state `SQL SECURITY`
+explicitly so execution does not depend on an unnoticed default.
+
+Official reference: [MariaDB stored routine privileges](https://mariadb.com/docs/server/server-usage/stored-routines/stored-functions/stored-routine-privileges).
+
+## Creating managed tables
+
+Creating a new table requires schema-level `CREATE`:
+
+```sql
+GRANT CREATE
+ON `<database>`.*
+TO '<etl_user>'@'<host>';
+```
+
+Temporary tables, when used for intermediate calculations, require:
+
+```sql
+GRANT CREATE TEMPORARY TABLES
+ON `<database>`.*
+TO '<etl_user>'@'<host>';
+```
+
+Do not grant schema-wide `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER` or
+`INDEX`. Grant them only on ETL-managed objects:
 
 ```sql
 GRANT
@@ -86,96 +115,125 @@ GRANT
   DROP,
   ALTER,
   INDEX
-ON `triggerIO`.`myair_tidy`
+ON `<database>`.`<managed_table>`
 TO '<etl_user>'@'<host>';
 ```
 
-Apply the same grant only to the managed tables listed above.
+The exact set can be reduced after the implementation is known. For example,
+an append-free full materialization may not need `UPDATE` or `DELETE`.
 
-Schema-level `CREATE` is still required because ETL procedures recreate tables after dropping them.
+Raw tables must never receive object-specific write or DDL grants.
 
-## Raw-table protection
+## Shadow tables and atomic replacement
 
-Raw tables receive only schema-level `SELECT`.
+The rebuilt ETL should populate a shadow table, validate it and swap it into
+place instead of dropping the current valid table before a long insert.
 
-They must never receive object-specific:
+MariaDB requires `DROP`, `CREATE` and `INSERT` privileges for every table
+participating in `RENAME TABLE`. These privileges must therefore cover the
+fixed managed names used in the swap, for example:
 
 ```text
-INSERT
-UPDATE
-DELETE
-DROP
-ALTER
-INDEX
+<managed_table>
+<managed_table>__next
+<managed_table>__previous
 ```
 
-privileges.
+Do not use unpredictable shadow-table names if the account relies on narrowly
+scoped object grants.
+
+An atomic swap can use:
+
+```sql
+RENAME TABLE
+  `<managed_table>` TO `<managed_table>__previous`,
+  `<managed_table>__next` TO `<managed_table>`;
+```
+
+Grant all required permissions on the fixed managed names before enabling the
+swap. `RENAME TABLE` does not transfer grants from one table name to another;
+permissions must be designed around the names used operationally.
+
+Official reference: [MariaDB RENAME TABLE](https://mariadb.com/docs/server/reference/sql-statements/data-definition/rename-table).
 
 ## Views
 
-The ETL account can create and inspect views through:
+Creating a new view requires `CREATE VIEW` plus `SELECT` on the referenced
+columns:
 
 ```sql
 GRANT
   CREATE VIEW,
   SHOW VIEW
-ON `triggerIO`.*
+ON `<database>`.*
 TO '<etl_user>'@'<host>';
 ```
 
-It must not receive schema-wide `DROP`, because MariaDB does not distinguish between dropping views and dropping tables at that privilege level.
+Replacing an existing view with `CREATE OR REPLACE VIEW` additionally requires
+`DROP` on that view. Because schema-wide `DROP` would also permit dropping raw
+tables, it must not be granted merely to manage views.
 
-Therefore:
+Instead, choose one of these approaches:
 
-* new views can be created by the ETL account;
-* existing production views must be replaced or removed by the database administrator or an authorized deployment account;
-* view changes must first be tested in `triggerIO-dev`.
+1. grant `DROP` only on the specific managed view;
+2. have an authorized owner replace the view;
+3. create a versioned new view and switch consumers separately.
 
-Example managed view:
+Views exposing participant data should select only the columns required by
+analyses. Do not expose email or other identifying attributes when a
+pseudonymous participant key is sufficient.
 
-```sql
-CREATE OR REPLACE VIEW active_accounts AS
-SELECT
-  id AS userId,
-  UPPER(LEFT(email, 2)) AS nationality,
-  email,
-  last_login
-FROM accounts
-WHERE last_login IS NOT NULL
-  AND UPPER(LEFT(email, 2)) IN ('CH', 'DE', 'GR', 'IT');
+Official reference: [MariaDB CREATE VIEW](https://mariadb.com/docs/server/server-usage/views/create-view).
+
+## Recommended account separation
+
+When practical, use two roles or accounts:
+
+### Object owner or deployment account
+
+May create and replace explicitly managed tables, views and routines. It has
+the narrowly scoped DDL privileges described above.
+
+### Runtime account
+
+Needs only:
+
+- `EXECUTE` on approved procedures;
+- `SELECT` on outputs needed for validation;
+- no direct DDL privilege;
+- no direct raw-table write privilege.
+
+This separation prevents an execution script from modifying arbitrary schema
+objects even if its credentials are misused.
+
+During the early step-by-step rebuild, one account may temporarily perform both
+roles. If so, its effective grants must still follow the raw/managed boundary.
+
+## Privileges that should not be granted globally
+
+The ETL account does not need:
+
+```text
+ALL PRIVILEGES
+SUPER
+FILE
+PROCESS
+SHUTDOWN
+CREATE USER
+GRANT OPTION
+SET USER
 ```
 
-## Development database
+It should not receive database-wide write or destructive privileges unless a
+specific implementation makes that unavoidable and the exception is reviewed.
 
-The development database can use broader privileges:
+## Verification queries
 
-```sql
-GRANT ALL PRIVILEGES
-ON `triggerIO-dev`.*
-TO '<etl_user>'@'<host>';
-```
-
-All ETL schema changes should be tested there before production deployment.
-
-## Verification
-
-Inspect effective grants:
+Inspect the current account:
 
 ```sql
+SELECT CURRENT_USER(), USER();
 SHOW GRANTS FOR CURRENT_USER;
-```
-
-Inspect object-specific privileges:
-
-```sql
-SELECT
-  GRANTEE,
-  TABLE_SCHEMA,
-  TABLE_NAME,
-  PRIVILEGE_TYPE
-FROM information_schema.TABLE_PRIVILEGES
-WHERE TABLE_SCHEMA = 'triggerIO'
-ORDER BY TABLE_NAME, PRIVILEGE_TYPE;
 ```
 
 Inspect schema-level privileges:
@@ -186,14 +244,66 @@ SELECT
   TABLE_SCHEMA,
   PRIVILEGE_TYPE
 FROM information_schema.SCHEMA_PRIVILEGES
-WHERE TABLE_SCHEMA IN ('triggerIO', 'triggerIO-dev')
-ORDER BY TABLE_SCHEMA, PRIVILEGE_TYPE;
+WHERE TABLE_SCHEMA = '<database>'
+ORDER BY GRANTEE, PRIVILEGE_TYPE;
 ```
 
-## Safety rules
+Inspect table and view privileges:
 
-* Grant write and DDL privileges only on managed ETL tables.
-* Never grant schema-wide `DROP`, `ALTER`, `INSERT`, `UPDATE`, `DELETE` or `INDEX` on `triggerIO`.
-* Test all schema changes in `triggerIO-dev`.
-* Deploy changes to existing production views through the database administrator.
+```sql
+SELECT
+  GRANTEE,
+  TABLE_SCHEMA,
+  TABLE_NAME,
+  PRIVILEGE_TYPE
+FROM information_schema.TABLE_PRIVILEGES
+WHERE TABLE_SCHEMA = '<database>'
+ORDER BY GRANTEE, TABLE_NAME, PRIVILEGE_TYPE;
+```
 
+Inspect routine privileges:
+
+```sql
+SELECT
+  GRANTEE,
+  ROUTINE_SCHEMA,
+  ROUTINE_NAME,
+  PRIVILEGE_TYPE
+FROM information_schema.ROUTINE_PRIVILEGES
+WHERE ROUTINE_SCHEMA = '<database>'
+ORDER BY GRANTEE, ROUTINE_NAME, PRIVILEGE_TYPE;
+```
+
+## Checklist before changing the database
+
+- Confirm the exact database selected by the connection.
+- Run `SHOW GRANTS FOR CURRENT_USER`.
+- Confirm raw tables have no write or DDL grants.
+- List the exact managed objects that may change.
+- Confirm whether the action is read-only, creates a new object or replaces an
+  existing object.
+- Confirm the privileges needed for every shadow-table name.
+- Confirm procedure `DEFINER` and `SQL SECURITY` behaviour.
+- Require explicit confirmation before executing DDL.
+- Validate output keys and row counts before an atomic swap.
+- Record any privilege change outside credentials and secrets.
+
+## Objects used by the first GPS tidy component
+
+The first implemented layer narrows the generic placeholders above to these
+managed objects:
+
+```text
+gps_tidy
+etl_gps_tidy
+```
+
+Its source boundary is read-only `SELECT` on `gps` and `user_gps`. Execution
+requires `SELECT`, `INSERT` and `DELETE` on `gps_tidy`. The procedure creates
+one temporary table of affected dates, so the invoking privilege model must
+also account for `CREATE TEMPORARY TABLES`.
+
+The procedures use `SQL SECURITY INVOKER`: the calling account, rather than an
+implicit privileged definer, must possess the required runtime privileges.
+Before granting any permission, compare the exact operations in
+`etl/sql/gps_tidy.sql` with the chosen owner/runtime account separation.

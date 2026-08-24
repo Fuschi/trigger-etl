@@ -1,110 +1,69 @@
 # TRIGGER ETL
 
-MariaDB ETL pipeline for cleaning, deduplicating and temporally aggregating environmental, wearable, GPS and sleep data collected within the TRIGGER project.
+This repository is the deliberately minimal starting point for rebuilding the
+TRIGGER data pipeline from raw MariaDB tables to analysis-ready datasets.
 
-## Project context and related resources
+The previous ETL implementation was removed on 2026-08-19 so that every data
+specification and transformation can be reconsidered, implemented and understood
+one piece at a time. Historical code remains available through Git history.
 
-This repository supports data processing activities within [TRIGGER — SoluTions foR mItiGatinG climate-induced hEalth thReats](https://project-trigger.eu/), a Horizon Europe project investigating the relationships between climate, human health and ecosystems.
+## Current state
 
-Related operational resources:
+The first complete component is now implemented: `gps_tidy` turns raw GPS
+readings into one unambiguous, technically valid observation per participant
+and UTC minute.
 
-- [TriggerIO service](https://trigger-io.difa.unibo.it/) — DIFA-hosted service for the management of data collected by the TRIGGER mobile application and connected clients;
-- [TriggerIO API documentation](https://trigger-io.difa.unibo.it/apiDocs.html) — REST endpoints for authentication, data insertion, data extraction and stored-procedure access;
-- [pytrigger](https://github.com/Nico-Curti/pytrigger/) — Python and command-line client developed by Nico Curti for authenticated access to TriggerIO datasets.
+It includes:
 
-This ETL repository operates directly on the MariaDB data layer and is complementary to the API and Python client listed above.
+- a documented destructive tidy specification;
+- one parameterless procedure that automatically chooses a full or incremental
+  refresh;
+- incremental selection based on `MAX(gps_tidy.created_at)`;
+- transactional rebuilding of all affected event dates.
 
-## Architecture
+No five-minute GPS aggregation or other sensor stream has been implemented yet.
 
-```text
-raw → tidy → 5-minute → hourly → daily
-```
-
-Sleep data are natively daily/nightly and follow a separate path:
-
-```text
-sleep → sleep_tidy
-```
-
-The pipeline is implemented through version-controlled SQL procedures and Bash scripts for deployment, execution, logging and scheduled runs.
-
-## Data streams
-
-| Stream | Measurements | Derived layers |
-|---|---|---|
-| `myair` | particulate matter, particle counts, temperature, humidity, pressure, sound, UVB and light | tidy, 5-minute, hourly, daily |
-| `smartwatchhigh` | heart rate, oxygen saturation, respiratory rate and sleep stage | tidy, 5-minute, hourly, daily |
-| `smartwatchlow` | steps, calories, blood pressure and temperature | tidy, 5-minute, hourly, daily |
-| `gps` | longitude, latitude and accuracy | tidy, 5-minute, hourly, daily |
-| `sleep` | nightly sleep summaries | tidy |
-
-## Processing principles
-
-- deterministic deduplication at reading and minute level;
-- retention of devices mapped to exactly one user;
-- stream-specific validity checks;
-- equal temporal weighting of 5-minute buckets in hourly means;
-- equal weighting of hourly means in daily means;
-- explicit coverage metadata at every aggregation level;
-- fixed 24-element JSON profiles in daily tables, reporting the number of valid 5-minute buckets in each hour;
-- no modification of raw source tables.
-
-No minimum coverage threshold is enforced by the ETL. Coverage fields are retained so analytical workflows can apply appropriate quality criteria downstream.
-
-## Repository structure
+## Intended direction
 
 ```text
-.
-├── README.md
-├── LICENSE
-├── docs
-│   └── database-permissions.md
-└── etl
-    ├── bin          # deployment and execution scripts
-    ├── sql          # views, schemas and ETL procedures
-    ├── diagnosis    # read-only diagnostic exports
-    └── cron         # scheduling example
+raw -> tidy -> canonical 5-minute -> optional hourly/daily -> analysis marts
 ```
 
-## Requirements
+The raw database remains immutable. The tidy layer will be intentionally
+selective: it should keep only documented data needed downstream and may
+discard unusable rows, values and columns. Every destructive rule must still be
+explicit and accompanied by aggregate row-loss diagnostics.
 
-- MariaDB 10.11 or a compatible version;
-- MariaDB/MySQL command-line client;
-- Bash;
-- `flock`, normally provided by the Linux `util-linux` package;
-- non-interactive database authentication for scheduled execution.
+The main analytical target is a participant-level five-minute dataset with an
+explicit timezone and a key that supports one-to-one joins across streams.
+Device and firmware information should be retained as provenance where useful,
+but their role in participant-level consolidation must be decided explicitly.
 
-`flock` prevents overlapping pipeline runs. `run_etl.sh` acquires a non-blocking lock on `logs/run_etl.lock`; if another ETL process already holds the lock, the new execution exits without starting a second pipeline.
+## Working principles
 
-## Usage
+- build one stream and one layer at a time;
+- use the primary TRIGGER database as the representative source for read-only
+  inspection and validation of real edge cases;
+- require an explicit target and confirmation before changing database objects;
+- keep database names and internal environment topology out of the repository;
+- keep raw tables read-only;
+- document grain, keys, units and exclusions before writing SQL;
+- use small synthetic fixtures for validation;
+- keep analysis-specific transformations in `trigger-analyses`;
+- prefer a small understandable implementation over a generic framework.
 
-Deploy SQL definitions and procedures:
+Detailed project instructions and the decisions inherited from the initial
+audit are in [AGENTS.md](AGENTS.md).
 
-```bash
-./etl/bin/deploy_sql.sh
-```
+The minimum database privileges and the raw-table safety boundary are described
+in [docs/database-permissions.md](docs/database-permissions.md).
 
-Run the development pipeline:
+The GPS rules, limitations and pre-deployment checks are in
+[docs/gps-tidy-specification.md](docs/gps-tidy-specification.md).
 
-```bash
-./etl/bin/run_etl.sh --env dev
-```
+## Next step
 
-Run the main pipeline:
-
-```bash
-./etl/bin/run_etl.sh --env main
-```
-
-Deployment and execution logs are written to `logs/`.
-
-The deployment script targets `triggerIO-dev` before `triggerIO`. SQL changes should always be validated on development before execution against the main database.
-
-## Documentation
-
-- [SQL conventions and aggregation semantics](etl/sql/README.md)
-- [Database permissions and safety model](docs/database-permissions.md)
-
-## License
-
-Distributed under the [MIT License](LICENSE).
+The next operational step is a read-only source-schema verification. Automated
+tests are intentionally deferred while the implementation is reviewed piece by
+piece. Applying or executing the SQL against a database remains a separate,
+explicitly confirmed action.
