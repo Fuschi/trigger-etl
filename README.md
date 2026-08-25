@@ -21,10 +21,15 @@ It includes:
 - incremental selection based on `MAX(gps_tidy.created_at)`;
 - transactional rebuilding of all affected event dates.
 
-The next component, `myair_tidy`, now has a reviewable SQL definition based on
-the same full-or-incremental model. Its raw schema, historical validity limits
-and aggregate row-loss diagnostics still require primary-database validation
-before deployment. No five-minute, hourly or daily layer has been rebuilt yet.
+The second component, `myair_tidy`, uses the same automatic full-or-incremental
+model and has completed full-build and incremental operational validation.
+
+The third component under review is `smartwatchlow_tidy`. Its SQL and data
+specification are based on a complete raw snapshot profile. The source and
+participant-mapping schemas and existing indexes have been verified;
+mapping cardinality and mapping-related row losses have also been inspected,
+while final deduplication losses and deployment still require primary-database
+validation. No five-minute, hourly or daily layer has been rebuilt yet.
 
 ## Intended direction
 
@@ -64,12 +69,13 @@ in [docs/database-permissions.md](docs/database-permissions.md).
 The stream-specific rules and limitations are in:
 
 - [docs/gps-tidy-specification.md](docs/gps-tidy-specification.md);
-- [docs/myair-tidy-specification.md](docs/myair-tidy-specification.md).
+- [docs/myair-tidy-specification.md](docs/myair-tidy-specification.md);
+- [docs/smartwatchlow-tidy-specification.md](docs/smartwatchlow-tidy-specification.md).
 
 ## Next step
 
-The next operational step is read-only verification of the MyAir source and
-mapping schemas, followed by aggregate validation of the historical cleaning
-limits. Automated tests are intentionally deferred while the implementation is
-reviewed piece by piece. Applying or executing SQL against a database remains
-a separate, explicitly confirmed action.
+The next operational step is read-only measurement of SmartwatchLow aggregate
+deduplication and final tidy row losses. Automated tests remain intentionally
+deferred while the implementation is reviewed piece by piece. Applying or
+executing SQL against a database remains a separate, explicitly confirmed
+action.

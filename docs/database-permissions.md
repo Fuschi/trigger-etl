@@ -298,16 +298,19 @@ gps_tidy
 etl_gps_tidy
 myair_tidy
 etl_myair_tidy
+smartwatchlow_tidy
+etl_smartwatchlow_tidy
 ```
 
 Their source boundaries are read-only `SELECT` on `gps`, `user_gps`, `myair`
-and `user_myair`. Execution requires `SELECT`, `INSERT` and `DELETE` on the
-corresponding managed tidy table. The MyAir full-build error handler also uses
-`TRUNCATE TABLE myair_tidy` to remove participant batches committed before a
-later batch failed, so its caller additionally needs object-specific `DROP` on
-`myair_tidy`. The procedures create connection-local temporary helper tables,
-so the invoking privilege model must also account for
-`CREATE TEMPORARY TABLES`.
+and `user_myair`, plus `smartwatchlow` and `user_smartwatchlow`. Execution
+requires `SELECT`, `INSERT` and `DELETE` on the corresponding managed tidy
+table. The MyAir and SmartwatchLow full-build error handlers also use
+`TRUNCATE TABLE` on their managed tidy table to remove participant batches
+committed before a later batch failed, so the caller additionally needs
+object-specific `DROP` on `myair_tidy` and `smartwatchlow_tidy`. The procedures
+create connection-local temporary helper tables, so the invoking privilege
+model must also account for `CREATE TEMPORARY TABLES`.
 
 The procedures use `SQL SECURITY INVOKER`: the calling account, rather than an
 implicit privileged definer, must possess the required runtime privileges.
