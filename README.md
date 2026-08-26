@@ -29,7 +29,14 @@ specification are based on a complete raw snapshot profile. The source and
 participant-mapping schemas and existing indexes have been verified;
 mapping cardinality and mapping-related row losses have also been inspected,
 while final deduplication losses and deployment still require primary-database
-validation. No five-minute, hourly or daily layer has been rebuilt yet.
+validation.
+
+The fourth component under review is `smartwatchhigh_tidy`. Its historical
+rules were compared with a complete compressed raw snapshot, and its new full
+and incremental procedure has passed local synthetic MariaDB execution tests.
+The source schema, indexes, participant mapping and aggregate mapping losses
+still require read-only validation on the primary database before deployment.
+No five-minute, hourly or daily layer has been rebuilt yet.
 
 ## Intended direction
 
@@ -70,12 +77,13 @@ The stream-specific rules and limitations are in:
 
 - [docs/gps-tidy-specification.md](docs/gps-tidy-specification.md);
 - [docs/myair-tidy-specification.md](docs/myair-tidy-specification.md);
-- [docs/smartwatchlow-tidy-specification.md](docs/smartwatchlow-tidy-specification.md).
+- [docs/smartwatchlow-tidy-specification.md](docs/smartwatchlow-tidy-specification.md);
+- [docs/smartwatchhigh-tidy-specification.md](docs/smartwatchhigh-tidy-specification.md).
 
 ## Next step
 
-The next operational step is read-only measurement of SmartwatchLow aggregate
-deduplication and final tidy row losses. Automated tests remain intentionally
-deferred while the implementation is reviewed piece by piece. Applying or
-executing SQL against a database remains a separate, explicitly confirmed
-action.
+The next SmartwatchHigh step is read-only verification of its raw schema,
+indexes, participant mapping and mapping-related row loss on the primary
+database. Repository-level automated tests remain intentionally deferred while
+the implementation is reviewed piece by piece. Applying or executing SQL
+against a database remains a separate, explicitly confirmed action.

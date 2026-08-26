@@ -20,6 +20,11 @@ asks for it.
   been profiled, and its source schema, indexes and mapping cardinality have
   been verified. Mapping-related raw row loss has been measured, while final
   deduplication and deployment validation remain outstanding.
+- `smartwatchhigh_tidy` is the fourth rebuilt definition. Its complete raw
+  snapshot has been profiled, its historical cleaning rules have been reviewed,
+  and its full and incremental SQL has passed local synthetic MariaDB tests.
+  Primary source schema, index, participant-mapping and deployment validation
+  remain outstanding.
 - No database deployment is represented by the current repository state.
 - Historical files remain recoverable from Git history, but must not be copied
   back without reviewing their assumptions.

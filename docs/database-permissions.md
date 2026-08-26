@@ -300,15 +300,18 @@ myair_tidy
 etl_myair_tidy
 smartwatchlow_tidy
 etl_smartwatchlow_tidy
+smartwatchhigh_tidy
+etl_smartwatchhigh_tidy
 ```
 
 Their source boundaries are read-only `SELECT` on `gps`, `user_gps`, `myair`
-and `user_myair`, plus `smartwatchlow` and `user_smartwatchlow`. Execution
-requires `SELECT`, `INSERT` and `DELETE` on the corresponding managed tidy
-table. The MyAir and SmartwatchLow full-build error handlers also use
-`TRUNCATE TABLE` on their managed tidy table to remove participant batches
-committed before a later batch failed, so the caller additionally needs
-object-specific `DROP` on `myair_tidy` and `smartwatchlow_tidy`. The procedures
+and `user_myair`, plus `smartwatchlow`, `user_smartwatchlow`, `smartwatchhigh`
+and `user_smartwatchhigh`. Execution requires `SELECT`, `INSERT` and `DELETE`
+on the corresponding managed tidy table. The MyAir, SmartwatchLow and
+SmartwatchHigh full-build error handlers also use `TRUNCATE TABLE` on their
+managed tidy table to remove participant batches committed before a later
+batch failed, so the caller additionally needs object-specific `DROP` on
+`myair_tidy`, `smartwatchlow_tidy` and `smartwatchhigh_tidy`. The procedures
 create connection-local temporary helper tables, so the invoking privilege
 model must also account for `CREATE TEMPORARY TABLES`.
 
