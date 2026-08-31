@@ -44,7 +44,16 @@ new full and incremental procedure has passed local synthetic MariaDB execution
 tests. The source schema, indexes, participant mapping and aggregate mapping
 losses still require read-only validation on the primary database.
 
-No five-minute, hourly or daily layer has been rebuilt yet.
+Canonical five-minute definitions are now implemented for GPS, MyAir and both
+smartwatch streams. They use the common `(userId, bucket_5min)` key, retain
+measurement-specific availability counts and have passed local synthetic
+MariaDB execution tests. Their first procedures are full-only: this preserves
+correctness when a later tidy correction removes a previously materialized
+minute. Production runtime, lock use and a deletion-aware propagation design
+must be reviewed before adding incremental refresh.
+
+Sleep remains participant-night data and is not expanded artificially to five
+minutes. No hourly or daily aggregation layer has been rebuilt yet.
 
 ## Intended direction
 
@@ -87,12 +96,17 @@ The stream-specific rules and limitations are in:
 - [docs/myair-tidy-specification.md](docs/myair-tidy-specification.md);
 - [docs/smartwatchlow-tidy-specification.md](docs/smartwatchlow-tidy-specification.md);
 - [docs/smartwatchhigh-tidy-specification.md](docs/smartwatchhigh-tidy-specification.md);
-- [docs/sleep-tidy-specification.md](docs/sleep-tidy-specification.md).
+- [docs/sleep-tidy-specification.md](docs/sleep-tidy-specification.md);
+- [docs/gps-5min-specification.md](docs/gps-5min-specification.md);
+- [docs/myair-5min-specification.md](docs/myair-5min-specification.md);
+- [docs/smartwatchlow-5min-specification.md](docs/smartwatchlow-5min-specification.md);
+- [docs/smartwatchhigh-5min-specification.md](docs/smartwatchhigh-5min-specification.md).
 
 ## Next step
 
-The next Sleep step is read-only verification of its raw schema, indexes,
-participant mapping and mapping-related row loss on the primary database.
-Repository-level automated tests remain intentionally deferred while the
-implementation is reviewed piece by piece. Applying or executing SQL against a
-database remains a separate, explicitly confirmed action.
+The next five-minute step is operational validation one stream at a time,
+beginning with the small `gps_5min`, after confirming that its corresponding
+tidy table is current. SmartwatchLow, SmartwatchHigh and Sleep still require
+their outstanding primary tidy validation before dependent layers can be
+deployed. Applying or executing SQL against a database remains a separate,
+explicitly confirmed action.

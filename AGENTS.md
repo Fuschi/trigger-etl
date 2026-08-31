@@ -30,6 +30,11 @@ asks for it.
   documented, and its full and incremental SQL has passed local synthetic
   MariaDB tests. Primary source schema, index, participant-mapping and
   deployment validation remain outstanding.
+- Canonical full-build definitions now exist for `gps_5min`, `myair_5min`,
+  `smartwatchlow_5min` and `smartwatchhigh_5min`. Each uses participant plus
+  UTC five-minute bucket as its key and has passed local synthetic MariaDB
+  tests. They remain undeployed and deliberately do not implement incremental
+  refresh until deletion-aware propagation and production runtime are known.
 - No database deployment is represented by the current repository state.
 - Historical files remain recoverable from Git history, but must not be copied
   back without reviewing their assumptions.

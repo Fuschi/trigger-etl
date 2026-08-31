@@ -288,7 +288,7 @@ ORDER BY GRANTEE, ROUTINE_NAME, PRIVILEGE_TYPE;
 - Validate output keys and row counts before an atomic swap.
 - Record any privilege change outside credentials and secrets.
 
-## Objects used by the rebuilt tidy components
+## Objects used by the rebuilt components
 
 The implemented tidy definitions narrow the generic placeholders above to
 these managed objects:
@@ -304,6 +304,14 @@ smartwatchhigh_tidy
 etl_smartwatchhigh_tidy
 sleep_tidy
 etl_sleep_tidy
+gps_5min
+etl_gps_5min
+myair_5min
+etl_myair_5min
+smartwatchlow_5min
+etl_smartwatchlow_5min
+smartwatchhigh_5min
+etl_smartwatchhigh_5min
 ```
 
 Their source boundaries are read-only `SELECT` on `gps`, `user_gps`, `myair`
@@ -315,9 +323,17 @@ MyAir, SmartwatchLow and SmartwatchHigh full-build error handlers also use
 committed before a later batch failed, so the caller additionally needs
 object-specific `DROP` on `myair_tidy`, `smartwatchlow_tidy` and
 `smartwatchhigh_tidy`. The smaller Sleep rebuild remains in one transaction and
-does not use `TRUNCATE` inside its procedure. All procedures create
+does not use `TRUNCATE` inside its procedure. All tidy procedures create
 connection-local temporary helper tables, so the invoking privilege model must
 also account for `CREATE TEMPORARY TABLES`.
+
+The four five-minute procedures read only their corresponding tidy table and
+use `SELECT`, `DELETE` and `INSERT` on the managed `*_5min` table. Their initial
+full implementations do not read raw tables, create temporary tables, truncate
+tables or drop objects. They use one consistent InnoDB transaction so a failed
+replacement rolls back to the previous complete aggregate. Initial creation of
+each table and routine still requires the owner/deployment privileges described
+above.
 
 The procedures use `SQL SECURITY INVOKER`: the calling account, rather than an
 implicit privileged definer, must possess the required runtime privileges.
