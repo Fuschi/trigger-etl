@@ -35,6 +35,15 @@ asks for it.
   UTC five-minute bucket as its key and has passed local synthetic MariaDB
   tests. They remain undeployed and deliberately do not implement incremental
   refresh until deletion-aware propagation and production runtime are known.
+- Canonical full-build hourly definitions now exist for the same four streams.
+  They use participant plus UTC hour as their key, weight each observed
+  five-minute bucket equally, preserve bucket and minute coverage, and have
+  passed local synthetic MariaDB tests. They remain undeployed and full-only.
+- Canonical full-build daily definitions now exist for the same four streams.
+  Their key is participant plus UTC date; daily means weight available hours
+  equally, and general plus measurement-specific JSON profiles store exactly
+  24 five-minute coverage counts. They passed local synthetic MariaDB tests
+  and remain undeployed and full-only.
 - No database deployment is represented by the current repository state.
 - Historical files remain recoverable from Git history, but must not be copied
   back without reviewing their assumptions.

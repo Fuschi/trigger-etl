@@ -52,8 +52,23 @@ correctness when a later tidy correction removes a previously materialized
 minute. Production runtime, lock use and a deletion-aware propagation design
 must be reviewed before adding incremental refresh.
 
+Canonical hourly definitions are now also implemented for GPS, MyAir and both
+smartwatch streams. They use `(userId, hour_ts)`, give each observed
+five-minute bucket equal temporal weight and retain both bucket-level and
+underlying minute-level availability. Provenance is never selected arbitrarily
+across a transition. These procedures have passed local synthetic MariaDB
+tests and remain full-only and undeployed.
+
 Sleep remains participant-night data and is not expanded artificially to five
-minutes. No hourly or daily aggregation layer has been rebuilt yet.
+minutes or hours.
+
+Canonical daily definitions are now implemented for the same four continuous
+streams. They use `(userId, date)` in UTC, weight each available hourly mean
+equally and retain general and measurement-specific five-minute coverage
+profiles as fixed JSON arrays ordered from hour 00 through 23. The historical
+`five_min_n` and `<measurement>_5min_n` names are retained for compatibility
+with the current coverage analyses. The daily procedures passed local
+synthetic MariaDB tests and remain full-only and undeployed.
 
 ## Intended direction
 
@@ -100,13 +115,21 @@ The stream-specific rules and limitations are in:
 - [docs/gps-5min-specification.md](docs/gps-5min-specification.md);
 - [docs/myair-5min-specification.md](docs/myair-5min-specification.md);
 - [docs/smartwatchlow-5min-specification.md](docs/smartwatchlow-5min-specification.md);
-- [docs/smartwatchhigh-5min-specification.md](docs/smartwatchhigh-5min-specification.md).
+- [docs/smartwatchhigh-5min-specification.md](docs/smartwatchhigh-5min-specification.md);
+- [docs/gps-hourly-specification.md](docs/gps-hourly-specification.md);
+- [docs/myair-hourly-specification.md](docs/myair-hourly-specification.md);
+- [docs/smartwatchlow-hourly-specification.md](docs/smartwatchlow-hourly-specification.md);
+- [docs/smartwatchhigh-hourly-specification.md](docs/smartwatchhigh-hourly-specification.md);
+- [docs/gps-daily-specification.md](docs/gps-daily-specification.md);
+- [docs/myair-daily-specification.md](docs/myair-daily-specification.md);
+- [docs/smartwatchlow-daily-specification.md](docs/smartwatchlow-daily-specification.md);
+- [docs/smartwatchhigh-daily-specification.md](docs/smartwatchhigh-daily-specification.md).
 
 ## Next step
 
-The next five-minute step is operational validation one stream at a time,
-beginning with the small `gps_5min`, after confirming that its corresponding
-tidy table is current. SmartwatchLow, SmartwatchHigh and Sleep still require
-their outstanding primary tidy validation before dependent layers can be
-deployed. Applying or executing SQL against a database remains a separate,
-explicitly confirmed action.
+The next operational step is validation one stream and one layer at a time,
+beginning with the small GPS five-minute, hourly and daily chain after
+confirming that `gps_tidy` is current. SmartwatchLow, SmartwatchHigh and Sleep
+still require their outstanding primary tidy validation before dependent
+layers can be deployed. Applying or executing SQL against a database remains
+a separate, explicitly confirmed action.
