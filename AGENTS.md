@@ -25,6 +25,11 @@ asks for it.
   and its full and incremental SQL has passed local synthetic MariaDB tests.
   Primary source schema, index, participant-mapping and deployment validation
   remain outstanding.
+- `sleep_tidy` is the fifth rebuilt definition. Its complete raw snapshot has
+  been profiled, nightly reference-date and version-selection rules have been
+  documented, and its full and incremental SQL has passed local synthetic
+  MariaDB tests. Primary source schema, index, participant-mapping and
+  deployment validation remain outstanding.
 - No database deployment is represented by the current repository state.
 - Historical files remain recoverable from Git history, but must not be copied
   back without reviewing their assumptions.

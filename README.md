@@ -36,6 +36,14 @@ rules were compared with a complete compressed raw snapshot, and its new full
 and incremental procedure has passed local synthetic MariaDB execution tests.
 The source schema, indexes, participant mapping and aggregate mapping losses
 still require read-only validation on the primary database before deployment.
+
+The fifth component under review is `sleep_tidy`. Its complete compressed raw
+snapshot has been profiled, and the nightly grain, reference-date limitations,
+latest-version rule and conservative measurement cleaning are documented. Its
+new full and incremental procedure has passed local synthetic MariaDB execution
+tests. The source schema, indexes, participant mapping and aggregate mapping
+losses still require read-only validation on the primary database.
+
 No five-minute, hourly or daily layer has been rebuilt yet.
 
 ## Intended direction
@@ -78,12 +86,13 @@ The stream-specific rules and limitations are in:
 - [docs/gps-tidy-specification.md](docs/gps-tidy-specification.md);
 - [docs/myair-tidy-specification.md](docs/myair-tidy-specification.md);
 - [docs/smartwatchlow-tidy-specification.md](docs/smartwatchlow-tidy-specification.md);
-- [docs/smartwatchhigh-tidy-specification.md](docs/smartwatchhigh-tidy-specification.md).
+- [docs/smartwatchhigh-tidy-specification.md](docs/smartwatchhigh-tidy-specification.md);
+- [docs/sleep-tidy-specification.md](docs/sleep-tidy-specification.md).
 
 ## Next step
 
-The next SmartwatchHigh step is read-only verification of its raw schema,
-indexes, participant mapping and mapping-related row loss on the primary
-database. Repository-level automated tests remain intentionally deferred while
-the implementation is reviewed piece by piece. Applying or executing SQL
-against a database remains a separate, explicitly confirmed action.
+The next Sleep step is read-only verification of its raw schema, indexes,
+participant mapping and mapping-related row loss on the primary database.
+Repository-level automated tests remain intentionally deferred while the
+implementation is reviewed piece by piece. Applying or executing SQL against a
+database remains a separate, explicitly confirmed action.

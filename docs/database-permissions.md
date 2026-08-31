@@ -302,18 +302,22 @@ smartwatchlow_tidy
 etl_smartwatchlow_tidy
 smartwatchhigh_tidy
 etl_smartwatchhigh_tidy
+sleep_tidy
+etl_sleep_tidy
 ```
 
 Their source boundaries are read-only `SELECT` on `gps`, `user_gps`, `myair`
 and `user_myair`, plus `smartwatchlow`, `user_smartwatchlow`, `smartwatchhigh`
-and `user_smartwatchhigh`. Execution requires `SELECT`, `INSERT` and `DELETE`
-on the corresponding managed tidy table. The MyAir, SmartwatchLow and
-SmartwatchHigh full-build error handlers also use `TRUNCATE TABLE` on their
-managed tidy table to remove participant batches committed before a later
-batch failed, so the caller additionally needs object-specific `DROP` on
-`myair_tidy`, `smartwatchlow_tidy` and `smartwatchhigh_tidy`. The procedures
-create connection-local temporary helper tables, so the invoking privilege
-model must also account for `CREATE TEMPORARY TABLES`.
+and `user_smartwatchhigh`, plus `sleep` and `user_sleep`. Execution requires
+`SELECT`, `INSERT` and `DELETE` on the corresponding managed tidy table. The
+MyAir, SmartwatchLow and SmartwatchHigh full-build error handlers also use
+`TRUNCATE TABLE` on their managed tidy table to remove participant batches
+committed before a later batch failed, so the caller additionally needs
+object-specific `DROP` on `myair_tidy`, `smartwatchlow_tidy` and
+`smartwatchhigh_tidy`. The smaller Sleep rebuild remains in one transaction and
+does not use `TRUNCATE` inside its procedure. All procedures create
+connection-local temporary helper tables, so the invoking privilege model must
+also account for `CREATE TEMPORARY TABLES`.
 
 The procedures use `SQL SECURITY INVOKER`: the calling account, rather than an
 implicit privileged definer, must possess the required runtime privileges.
