@@ -1,0 +1,8 @@
+# TRIGGER ETL nightly execution example.
+# Replace YOUR_DATABASE and the repository path before installing this line.
+
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# Run every day at 02:00 using credentials from the account's MariaDB client configuration.
+0 2 * * * ETL_DATABASE=YOUR_DATABASE /absolute/path/to/trigger-etl/etl/run_etl.sh

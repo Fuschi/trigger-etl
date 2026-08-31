@@ -1,5 +1,8 @@
 # `gps_hourly` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 ## Purpose and grain
 
 `gps_hourly` is derived only from `gps_5min` and has one row per participant
@@ -27,9 +30,10 @@ unmixed and all scalar values agree.
 
 `CALL etl_gps_hourly();` performs a parameterless transactional full rebuild.
 It fails before deletion when `gps_5min` is empty and rolls back on any SQL
-error. This deletion-aware first implementation precedes incremental design.
-The procedure returns UTC timing and source, expected, deleted, inserted and
-final row counts. It must not overlap the `gps_5min` refresh.
+error. Full replacement is the implemented deletion-aware policy; the layer
+keeps no separate change log. The procedure returns UTC timing and source,
+expected, deleted, inserted and final row counts. It must not overlap the
+`gps_5min` refresh.
 
-An incompatible historical table must be replaced explicitly before first
-deployment; `CREATE TABLE IF NOT EXISTS` does not migrate it.
+`CREATE TABLE IF NOT EXISTS` does not migrate an incompatible existing schema;
+schema replacement is a separate installation operation.

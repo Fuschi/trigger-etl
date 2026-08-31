@@ -42,9 +42,9 @@ CREATE TABLE IF NOT EXISTS myair_tidy (            -- Preserve a compatible exis
   temperature DOUBLE NULL,                         -- Preserved as recorded; range and unit unresolved.
   humidity    DOUBLE NULL,                         -- Relative humidity in percent.
   pressure    DOUBLE NULL,                         -- Atmospheric pressure in hPa.
-  sound       DOUBLE NULL,                         -- Sound measurement; unit not yet verified.
-  uvb         DOUBLE NULL,                         -- UVB measurement; unit not yet verified.
-  light       DOUBLE NULL,                         -- Light measurement; unit not yet verified.
+  sound       DOUBLE NULL,                         -- Sound measurement on the recorded sensor scale.
+  uvb         DOUBLE NULL,                         -- UVB measurement on the recorded sensor scale.
+  light       DOUBLE NULL,                         -- Light measurement on the recorded sensor scale.
 
   PRIMARY KEY (userId, minute_ts),                 -- Enforce one row per participant-minute.
   INDEX idx_myair_tidy_user_bucket (userId, bucket_5min), -- Support participant time-series queries.

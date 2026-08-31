@@ -12,7 +12,7 @@
 -- Usage:
 --   CALL etl_gps_5min();
 --
--- This first canonical implementation performs one transactional full rebuild.
+-- This canonical implementation performs one transactional full rebuild.
 -- It intentionally has no incremental watermark because a watermark over the
 -- current tidy rows cannot detect a tidy row that was deleted by a correction.
 -- ============================================================================
@@ -215,7 +215,7 @@ main: BEGIN                                       -- Open a named procedure bloc
   SET v_finished_at = UTC_TIMESTAMP(6);           -- Record successful completion time.
 
   SELECT
-    'full' AS run_mode,                           -- This initial procedure is deliberately full-only.
+    'full' AS run_mode,                           -- The procedure is deliberately full-only.
     v_started_at AS started_at,
     v_finished_at AS finished_at,
     v_source_rows AS source_rows,

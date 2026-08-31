@@ -5,7 +5,7 @@
 -- Managed objects: myair_5min, etl_myair_5min()
 -- Usage: CALL etl_myair_5min();
 --
--- This first canonical implementation performs one transactional full rebuild.
+-- This canonical implementation performs one transactional full rebuild.
 -- A full rebuild remains correct when a tidy correction removes a prior row;
 -- a watermark over only the currently present tidy rows cannot detect that.
 -- ============================================================================

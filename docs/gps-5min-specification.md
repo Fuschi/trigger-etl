@@ -1,5 +1,8 @@
 # `gps_5min` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 ## Purpose and grain
 
 `gps_5min` is the canonical five-minute GPS layer derived only from
@@ -16,7 +19,7 @@ movement, speed or maximum-accuracy filter.
 
 ## Source
 
-The source is the rebuilt tidy table:
+The source is the tidy table:
 
 ```text
 gps_tidy
@@ -84,7 +87,7 @@ For every output row:
 
 ## Refresh model
 
-The initial procedure is deliberately full-only and parameterless:
+The procedure is parameterless and uses a full replacement:
 
 ```sql
 CALL etl_gps_5min();
@@ -95,12 +98,10 @@ inserts the complete new aggregate in one transaction. An SQL error rolls back
 both operations and preserves the prior valid table. An empty source raises an
 error before deletion.
 
-A full rebuild is used first because a downstream watermark based only on
-currently present tidy rows cannot detect a tidy row that was removed during a
-later correction. Incremental materialization therefore requires either an
-affected-key handoff/change log or a comparison against the complete source.
-Neither mechanism is introduced until the full transformation is
-operationally correct and its runtime is measured.
+A full rebuild is the implemented correctness policy because a downstream
+watermark based only on currently present tidy rows cannot detect a tidy row
+removed by an upstream correction. No separate change log or deletion state is
+maintained.
 
 The procedure returns start and finish timestamps, source rows, source bucket
 count, deleted rows, inserted rows and final rows. No persistent run log or
@@ -117,5 +118,5 @@ state table is created.
   deletion-aware incremental state.
 - Scheduled execution must not overlap the tidy refresh that supplies its
   source.
-- An older incompatible `gps_5min` table must be replaced explicitly before
-  first deployment; `CREATE TABLE IF NOT EXISTS` does not migrate it.
+- `CREATE TABLE IF NOT EXISTS` does not migrate an incompatible existing
+  schema; schema replacement is a separate installation operation.

@@ -1,5 +1,8 @@
 # `smartwatchlow_daily` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 This table is derived only from `smartwatchlow_hourly`, with primary key
 `(userId, date)` and UTC calendar-date semantics.
 
@@ -18,5 +21,5 @@ throughout the observed day. Ambiguous-hour and mixed-bucket counts are kept.
 
 `CALL etl_smartwatchlow_daily();` performs a parameterless transactional full
 replacement, rejects an empty hourly source and checks output cardinality. It
-must not overlap `etl_smartwatchlow_hourly()`. Incremental refresh and database
-deployment are intentionally deferred.
+must not overlap `etl_smartwatchlow_hourly()`. Incremental refresh is not
+implemented because this layer keeps no deletion-aware change log.

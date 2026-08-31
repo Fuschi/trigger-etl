@@ -34,8 +34,8 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_tidy (   -- Preserve a compatible exist
   cal      INT NULL,                               -- Non-negative recorded integer; unit unresolved.
   bphigh   INT NULL,                               -- Greater positive blood-pressure value in mmHg.
   bplow    INT NULL,                               -- Lower positive blood-pressure value in mmHg.
-  bodytemp DOUBLE NULL,                            -- Positive body temperature no greater than 45 °C.
-  skintemp DOUBLE NULL,                            -- Positive skin temperature no greater than 45 °C.
+  bodytemp DOUBLE NULL,                            -- Raw recorded value; meaning and unit unresolved.
+  skintemp DOUBLE NULL,                            -- Raw recorded value; meaning and unit unresolved.
 
   PRIMARY KEY (userId, minute_ts),                 -- Enforce one row per participant-minute.
   INDEX idx_smartwatchlow_tidy_user_bucket (userId, bucket_5min), -- Participant time series.
@@ -55,11 +55,7 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_tidy (   -- Preserve a compatible exist
         AND bphigh >= bplow
         AND bplow > 0
       )
-    ),
-  CONSTRAINT chk_smartwatchlow_tidy_bodytemp
-    CHECK (bodytemp IS NULL OR (bodytemp > 0 AND bodytemp <= 45)), -- Celsius technical guard.
-  CONSTRAINT chk_smartwatchlow_tidy_skintemp
-    CHECK (skintemp IS NULL OR (skintemp > 0 AND skintemp <= 45)) -- Celsius technical guard.
+    )
 ) ENGINE = InnoDB;                                 -- Participant batches and increments are transactional.
 
 
@@ -379,16 +375,8 @@ main: BEGIN                                        -- Open a named procedure blo
           THEN LEAST(bphigh, bplow)
           ELSE NULL
         END AS bplow,
-        CASE
-          WHEN bodytemp > 0 AND bodytemp <= 45
-          THEN bodytemp
-          ELSE NULL
-        END AS bodytemp,
-        CASE
-          WHEN skintemp > 0 AND skintemp <= 45
-          THEN skintemp
-          ELSE NULL
-        END AS skintemp
+        bodytemp,                                  -- Preserve the unresolved raw sensor scale.
+        skintemp                                   -- Preserve the unresolved raw sensor scale.
       FROM device_minute_checked
       WHERE event_n = 1                            -- Keep one unambiguous event per device-minute.
     ),

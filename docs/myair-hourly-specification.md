@@ -1,5 +1,8 @@
 # `myair_hourly` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 `myair_hourly` contains one row per `(userId, hour_ts)` and is derived only
 from `myair_5min`. `hour_ts` is the beginning of the UTC hour.
 
@@ -19,8 +22,8 @@ already mixed source bucket are not reconstructed or guessed.
 `CALL etl_myair_hourly();` performs a full transactional replacement from one
 consistent source snapshot. Empty source data and row-count mismatches fail
 the run without erasing the preceding valid output. Incremental processing is
-deferred until this definition is operationally validated and a deletion-aware
-refresh mechanism exists. The procedure must not overlap `etl_myair_5min()`.
+not implemented because this layer keeps no deletion-aware change log. The
+procedure must not overlap `etl_myair_5min()`.
 
-An incompatible historical table requires an explicitly confirmed replacement
-before first deployment.
+`CREATE TABLE IF NOT EXISTS` does not migrate an incompatible existing schema;
+schema replacement is a separate installation operation.

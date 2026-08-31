@@ -1,5 +1,8 @@
 # `smartwatchhigh_hourly` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 `smartwatchhigh_hourly` is derived only from `smartwatchhigh_5min`. One row
 represents `(userId, hour_ts)`, with an hour beginning in UTC.
 
@@ -21,6 +24,7 @@ complete hour is unambiguous; counts expose already mixed source buckets.
 `CALL etl_smartwatchhigh_hourly();` performs a parameterless transactional
 full rebuild. Empty source data or row-count mismatch fails without replacing
 the preceding valid output. It must not overlap
-`etl_smartwatchhigh_5min()`. Incremental design remains deferred until a
-deletion-aware refresh mechanism is available. An incompatible historical
-table requires explicitly confirmed replacement before deployment.
+`etl_smartwatchhigh_5min()`. Incremental refresh is not implemented because
+this layer keeps no deletion-aware change log. `CREATE TABLE IF NOT EXISTS`
+does not migrate an incompatible existing schema; schema replacement is a
+separate installation operation.

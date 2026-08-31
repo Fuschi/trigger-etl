@@ -1,9 +1,12 @@
 # `myair_tidy` data specification
 
+Shared cleaning, time and aggregation policy:
+[`architecture.md`](architecture.md).
+
 ## Purpose
 
 `myair_tidy` contains one unambiguous MyAir observation per participant and
-UTC minute. It retains the environmental measurements needed by the later
+UTC minute. It retains the environmental measurements needed by the canonical
 five-minute analytical layer without keeping redundant calendar columns.
 
 ```text
@@ -14,7 +17,7 @@ primary key: (userId, minute_ts)
 The raw `myair` and `user_myair` tables remain read only. The tidy table is
 deliberately selective and can always be rebuilt from raw data.
 
-## Source assumptions to verify
+## Required source structure and interpretation
 
 The SQL expects:
 
@@ -29,14 +32,14 @@ user_myair
   deviceId, userId
 ```
 
-The historical implementation treated `event_ts` as `DATETIME` and
-`created_at` as `TIMESTAMP`. The current primary-database schema must be
-checked before deployment. The procedure reads `created_at` with the MariaDB
-session set to UTC before storing it in the tidy `DATETIME` column.
+The definition requires `event_ts` to be a `DATETIME` and `created_at` to be a
+`TIMESTAMP`. It reads `created_at` with the MariaDB session set to UTC before
+storing it in tidy `DATETIME(6)`. The source event time carries no timezone
+offset, so the ETL explicitly interprets it as UTC.
 
-The timezone represented by `event_ts`, the immutability of `created_at` and
-the history represented by `user_myair` must also be verified. In particular,
-the mapping table is assumed not to contain validity intervals.
+`created_at` is treated as an immutable ingestion timestamp. The mapping table
+does not provide validity intervals; only devices associated with exactly one
+participant over the available mapping history are retained.
 
 ## Output columns
 
@@ -51,12 +54,12 @@ the mapping table is assumed not to contain validity intervals.
 | `firmware` | Firmware provenance |
 | `pm1`, `pm25`, `pm10` | Particulate mass in micrograms per cubic metre |
 | `pc03`, `pc05`, `pc1`, `pc25`, `pc5`, `pc10` | Particle counts, historically documented as counts per decilitre |
-| `temperature` | Temperature as recorded; unit and validity range still require verification |
+| `temperature` | Temperature on the recorded sensor scale; no scientific validity range is imposed |
 | `humidity` | Relative humidity in percent |
 | `pressure` | Pressure in hPa |
-| `sound` | Sound measurement; unit still requires verification |
-| `uvb` | UVB measurement; unit still requires verification |
-| `light` | Light measurement; unit still requires verification |
+| `sound` | Sound on the recorded sensor scale |
+| `uvb` | UVB on the recorded sensor scale |
+| `light` | Light on the recorded sensor scale |
 
 The separate `date`, `hour`, `minute` and `second` columns from the historical
 tidy table are omitted because they can be derived from `event_ts` or
@@ -93,13 +96,13 @@ measurements in the same row.
 | `temperature` | any non-null recorded value | No defensible validity range has been confirmed; the observed raw range contains no sentinel pattern |
 | `humidity` | `0` through `100` | Physical percent relative-humidity bounds |
 | `pressure` | `300` through `1100` | Physical guard in hPa; every observed violation is the `65535` error code |
-| `sound` | `0` through `200` | Provisional technical guard separating one isolated value of `1792` from the otherwise observed maximum of `110` |
+| `sound` | `0` through `200` | Empirical technical guard separating one isolated value of `1792` from the otherwise observed maximum of `110` |
 | `uvb` | `0` through `6552` | Every observed violation is the `6553` error or missing-value code |
 | `light` | values greater than or equal to `0` | Negative readings are technically invalid; the observed upper plateau is retained |
 
-No additional scientific or exposure threshold is applied. The historical
-limits that still lack device documentation are explicit provisional
-assumptions, not silently accepted facts.
+No additional scientific or exposure threshold is applied. Where a unit is
+not established by device documentation, the output deliberately retains the
+recorded sensor scale instead of assigning an unsupported physical meaning.
 
 ## Primary raw-data validation on 2026-08-24
 
@@ -159,7 +162,7 @@ violations are all exactly `6553`. No negative value and no value above
 `65535` was observed in those fields.
 
 The `sound` profile provides empirical, but not device-documentation, support
-for the provisional upper guard. There are 22,089 values above `100`: all are
+for the technical upper guard. There are 22,089 values above `100`: all are
 between `101` and `110` except one value of `1792`. The `200` threshold
 therefore cleans that single isolated outlier without altering the observed
 high end of the main distribution.
@@ -168,7 +171,7 @@ Temperature remains unfiltered. The dump contains 3,186 negative readings and
 4,429 readings above `50`, with a continuous observed maximum of `61.44` and
 no sentinel pattern. These readings may reflect real ambient conditions,
 direct exposure or sensor heating; no tidy-layer exclusion is scientifically
-justified yet.
+justified.
 
 Light also remains subject only to the non-negative technical guard. Its
 maximum `18905` occurs in 85,854 rows, indicating a likely sensor saturation
@@ -177,10 +180,10 @@ later aggregation or analysis may report saturation counts if they have a
 concrete scientific use. In particular, `6553` must not be treated as a light
 error code because many valid light readings extend above that value.
 
-This validation concerns measurement ranges only. Row losses caused by exact
-event conflicts, multiple readings within a minute, device mapping and
-participant-minute ambiguity must be measured separately after the procedure
-is executed against the representative database.
+This snapshot validation concerns measurement ranges. Deduplication, mapping
+and participant-minute exclusions are data-state-dependent and are assessed
+separately through focused database queries and the procedure's aggregate run
+summary; they are not persisted as a row-level rejection log.
 
 ## Database objects
 
@@ -240,8 +243,8 @@ across devices and firmware versions.
   interruption, empty `myair_tidy` explicitly before retrying the full build.
 - Deliberately requesting another full refresh requires emptying the managed
   table before the next call.
-- An existing historical `myair_tidy` has an incompatible schema and must not
-  merely be truncated. Replacing it requires a separately confirmed database
+- `CREATE TABLE IF NOT EXISTS` does not migrate an incompatible
+  `myair_tidy`. Replacing its schema requires a separately confirmed database
   operation.
 
 ## Returned summary
@@ -261,7 +264,6 @@ inserted_tidy_rows
 total_tidy_rows
 ```
 
-The raw measurement checks have been validated as documented above. Focused
-database validation must still calculate the separate row exclusions caused
-by deduplication, mapping and participant-minute ambiguity before the
-definition is considered complete.
+The returned summary provides routine source and output counts. Per-rule
+deduplication, mapping and ambiguity losses remain focused validation metrics,
+not persistent ETL state.

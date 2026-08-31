@@ -1,11 +1,14 @@
 # `smartwatchlow_tidy` data specification
 
+Shared cleaning, time and aggregation policy:
+[`architecture.md`](architecture.md).
+
 ## Purpose
 
 `smartwatchlow_tidy` contains one unambiguous low-frequency smartwatch
 observation per participant and UTC minute. It retains the activity, blood
-pressure and temperature measurements needed by the later five-minute layer
-without retaining redundant calendar components.
+pressure and temperature-labelled measurements needed by the canonical
+five-minute layer without retaining redundant calendar components.
 
 ```text
 grain:       participant x UTC minute
@@ -87,11 +90,11 @@ procedure copies resolved mappings into an indexed temporary table.
 | `deviceId` | Device provenance |
 | `firmware` | Firmware provenance |
 | `step` | Step value reported for the containing five-minute period |
-| `cal` | Non-negative calorie value reported for the containing five-minute period; unit not yet confirmed |
+| `cal` | Non-negative calorie value on the recorded sensor scale for the containing five-minute period |
 | `bphigh` | Greater positive member of the raw blood-pressure pair; presumed systolic mmHg |
 | `bplow` | Lower positive member of the raw blood-pressure pair; presumed diastolic mmHg |
-| `bodytemp` | Positive body-temperature value no greater than 45 °C |
-| `skintemp` | Positive skin-temperature value no greater than 45 °C |
+| `bodytemp` | Raw recorded value; meaning and unit unresolved |
+| `skintemp` | Raw recorded value; meaning and unit unresolved |
 
 The raw `year`, `month`, `day`, `hour`, `minute` and `second` columns are
 omitted because they can be derived from `event_ts` or `minute_ts`.
@@ -126,15 +129,13 @@ from the same row.
 | `step` | values greater than or equal to `0` | No negative value or implausible upper sentinel was observed; the raw maximum of 925 is compatible with a very active five-minute interval |
 | `cal` | values greater than or equal to `0` | No negative value was observed; the 352 values above 100 are suspicious but are retained because neither the unit nor a defensible upper threshold has been confirmed |
 | `bphigh`, `bplow` | both raw values must be positive; store maximum then minimum | Zero is the missing-pair code and one firmware transmits the two positive fields in reverse order |
-| `bodytemp` | greater than `0` and no greater than `45` | Zero is a paired missing-value code; values above 45 °C occur in isolated corrupt pairs |
-| `skintemp` | greater than `0` and no greater than `45` | Zero is a paired missing-value code; values above 45 °C occur in isolated corrupt pairs |
+| `bodytemp` | any non-null recorded value | Meaning and unit are unresolved; no tidy-layer threshold is applied |
+| `skintemp` | any non-null recorded value | Meaning and unit are unresolved; no tidy-layer threshold is applied |
 
-Positive temperatures below ordinary physiological ranges are retained. They
-may represent an unworn sensor, ambient exposure or a valid cold surface, and
-there is no defensible tidy-layer threshold for removing them. The calorie
-unit remains unresolved. Values above 100, including a maximum of 1697, should
-be treated as a documented quality warning by analyses until device
-documentation establishes their meaning.
+`bodytemp` and `skintemp` are not assumed to represent body or skin
+temperature. Zeros and values above 45 are retained for later interpretation.
+The calorie unit is also unresolved; values above 100, including a maximum of
+1697, remain on the recorded sensor scale.
 
 ## Step and calorie semantics
 
@@ -149,10 +150,10 @@ counters:
 - between consecutive five-minute buckets, increases and decreases occur at
   nearly equal frequencies for both measurements.
 
-The tidy layer preserves the minute-level source observations. A later
-five-minute layer should represent each bucket with the mean, which is robust
-to the rare within-bucket disagreement and does not multiply repeated values.
-It must not sum the minute-level repetitions.
+The tidy layer preserves the minute-level source observations. The canonical
+five-minute layer represents each bucket with the mean, which is robust to the
+rare within-bucket disagreement and does not multiply repeated values. It does
+not sum the minute-level repetitions.
 
 ## Primary raw-data validation on 2026-08-25
 
@@ -174,7 +175,7 @@ All `event_ts` seconds were zero and the separate calendar columns agreed with
 rows relative to the profiling date; they are retained because the shared date
 window is an analysis rule, not a destructive tidy rule.
 
-### Raw measurement distributions
+### Measurements with active cleaning rules
 
 | Measurement | Raw minimum | P01 | Median | P99 | Raw maximum | Proposed values made `NULL` |
 |---|---:|---:|---:|---:|---:|---:|
@@ -182,14 +183,10 @@ window is an analysis rule, not a destructive tidy rule.
 | `cal` | 0 | 0 | 0 | 23 | 1697 | 0; 352 values above 100 are flagged but retained |
 | reordered `bphigh` | 107 | 112 | 120 | 128 | 137 | 5,804,783 zero pairs |
 | reordered `bplow` | 67 | 73 | 79 | 89 | 93 | 5,804,783 zero pairs |
-| positive `bodytemp` ≤45 | 6.4 | 19 | 31 | 37 | 45 | 13,431,372 zeros and 76 values above 45 |
-| positive `skintemp` ≤45 | 16.1 | 29.2 | 36 | 37 | 43.2 | 13,431,372 zeros and 1,079 values above 45 |
 
-The two temperatures are simultaneously zero in all 13,431,372 zero rows;
-neither temperature is zero while the other is positive. Values above 45 °C
-affect 1,155 rows and pair one extreme value, up to 152, with an otherwise
-ordinary value around 38–39 °C. Cleaning therefore affects only the invalid
-cell, not the complete row.
+The two temperature-labelled fields are simultaneously zero in 13,431,372
+rows. Values above 45 occur in 1,155 rows and reach 152 across the pair. All
+these values are retained because their meaning and unit are unresolved.
 
 The pressure-field reversal is entirely firmware-specific in this snapshot:
 
@@ -261,8 +258,9 @@ Scheduled executions must not overlap.
   tidy table explicitly before retrying.
 - Deliberately requesting another full refresh requires emptying the managed
   table before the next call.
-- The historical `smartwatchlow_tidy` schema is incompatible with this
-  definition and must not merely be truncated before first deployment.
+- `CREATE TABLE IF NOT EXISTS` does not migrate an incompatible managed table.
+  Replacing an older `smartwatchlow_tidy` schema is a separately confirmed
+  database operation.
 
 ## Returned summary
 
@@ -281,5 +279,6 @@ inserted_tidy_rows
 total_tidy_rows
 ```
 
-The remaining primary-database validation must measure deduplication and final
-tidy row losses, and confirm runtime privileges before deployment.
+The returned summary provides routine source and output counts. The detailed
+raw profile and mapping audit above provide focused rule-level evidence;
+runtime privilege verification remains an operational installation check.

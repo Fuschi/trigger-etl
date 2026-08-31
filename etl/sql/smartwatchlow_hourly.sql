@@ -63,11 +63,11 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_hourly (
          AND bplow_min <= bplow_mean AND bplow_mean <= bplow_max AND bphigh_mean >= bplow_mean)),
   CONSTRAINT chk_smartwatchlow_hourly_temperature
     CHECK (((bodytemp_5min_n = 0 AND bodytemp_mean IS NULL AND bodytemp_min IS NULL AND bodytemp_max IS NULL)
-         OR (bodytemp_5min_n > 0 AND bodytemp_mean IS NOT NULL AND bodytemp_min > 0
-           AND bodytemp_min <= bodytemp_mean AND bodytemp_mean <= bodytemp_max AND bodytemp_max <= 45))
+         OR (bodytemp_5min_n > 0 AND bodytemp_mean IS NOT NULL
+           AND bodytemp_min <= bodytemp_mean AND bodytemp_mean <= bodytemp_max))
        AND ((skintemp_5min_n = 0 AND skintemp_mean IS NULL AND skintemp_min IS NULL AND skintemp_max IS NULL)
-         OR (skintemp_5min_n > 0 AND skintemp_mean IS NOT NULL AND skintemp_min > 0
-           AND skintemp_min <= skintemp_mean AND skintemp_mean <= skintemp_max AND skintemp_max <= 45)))
+         OR (skintemp_5min_n > 0 AND skintemp_mean IS NOT NULL
+           AND skintemp_min <= skintemp_mean AND skintemp_mean <= skintemp_max)))
 ) ENGINE = InnoDB;
 
 DELIMITER //

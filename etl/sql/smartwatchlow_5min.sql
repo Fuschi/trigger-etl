@@ -5,7 +5,7 @@
 -- Managed objects: smartwatchlow_5min, etl_smartwatchlow_5min()
 -- Usage: CALL etl_smartwatchlow_5min();
 --
--- The first canonical definition performs a deletion-aware full rebuild.
+-- The canonical definition performs a deletion-aware full rebuild.
 -- ============================================================================
 
 
@@ -29,9 +29,9 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_5min (   -- Preserve a compatible exist
   bplow_mean DOUBLE NULL, bplow_min DOUBLE NULL, bplow_max DOUBLE NULL,
   bplow_n TINYINT UNSIGNED NOT NULL,              -- Lower member of the pressure pair, presumed mmHg.
   bodytemp_mean DOUBLE NULL, bodytemp_min DOUBLE NULL, bodytemp_max DOUBLE NULL,
-  bodytemp_n TINYINT UNSIGNED NOT NULL,           -- Valid body-temperature minutes in °C.
+  bodytemp_n TINYINT UNSIGNED NOT NULL,           -- Minutes with a recorded raw bodytemp value.
   skintemp_mean DOUBLE NULL, skintemp_min DOUBLE NULL, skintemp_max DOUBLE NULL,
-  skintemp_n TINYINT UNSIGNED NOT NULL,           -- Valid skin-temperature minutes in °C.
+  skintemp_n TINYINT UNSIGNED NOT NULL,           -- Minutes with a recorded raw skintemp value.
 
   PRIMARY KEY (userId, bucket_5min),              -- Enforce one participant/bucket row.
   INDEX idx_smartwatchlow_5min_bucket (bucket_5min),
@@ -86,12 +86,12 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_5min (   -- Preserve a compatible exist
     CHECK (
       ((bodytemp_n = 0 AND bodytemp_min IS NULL AND bodytemp_mean IS NULL AND bodytemp_max IS NULL)
        OR (bodytemp_n > 0 AND bodytemp_min IS NOT NULL AND bodytemp_mean IS NOT NULL
-        AND bodytemp_max IS NOT NULL AND bodytemp_min > 0 AND bodytemp_min <= bodytemp_mean
-        AND bodytemp_mean <= bodytemp_max AND bodytemp_max <= 45))
+        AND bodytemp_max IS NOT NULL AND bodytemp_min <= bodytemp_mean
+        AND bodytemp_mean <= bodytemp_max))
       AND ((skintemp_n = 0 AND skintemp_min IS NULL AND skintemp_mean IS NULL AND skintemp_max IS NULL)
        OR (skintemp_n > 0 AND skintemp_min IS NOT NULL AND skintemp_mean IS NOT NULL
-        AND skintemp_max IS NOT NULL AND skintemp_min > 0 AND skintemp_min <= skintemp_mean
-        AND skintemp_mean <= skintemp_max AND skintemp_max <= 45))
+        AND skintemp_max IS NOT NULL AND skintemp_min <= skintemp_mean
+        AND skintemp_mean <= skintemp_max))
     )
 ) ENGINE = InnoDB;
 

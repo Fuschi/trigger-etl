@@ -1,5 +1,8 @@
 # `gps_tidy` data specification
 
+Shared cleaning, time and aggregation policy:
+[`architecture.md`](architecture.md).
+
 ## Purpose
 
 `gps_tidy` contains one unambiguous, technically valid GPS reading per
@@ -13,7 +16,7 @@ primary key: (userId, minute_ts)
 Raw tables remain untouched. The tidy table is deliberately selective and can
 always be rebuilt from raw data.
 
-## Source assumptions to verify
+## Required source structure and interpretation
 
 The SQL expects:
 
@@ -29,9 +32,13 @@ user_gps
 Read-only schema inspection confirmed that `gps.event_ts` is a generated
 `DATETIME` and `gps.created_at` is a `TIMESTAMP`. The procedure therefore reads
 `created_at` with the MariaDB session set to UTC before storing it in the tidy
-`DATETIME` column. The timezone represented by the components used to generate
-`event_ts` must still be verified, as must the immutability of `created_at` and
-whether device assignments contain validity dates or change timestamps.
+`DATETIME` column. The ETL interprets the calendar components represented by
+`event_ts` as UTC. This is an explicit project convention because the source
+does not carry a timezone offset.
+
+`created_at` is treated as an immutable ingestion timestamp. The mapping table
+does not provide validity intervals, so only devices associated with exactly
+one participant over the available mapping history are retained.
 
 ## Output columns
 
@@ -81,7 +88,7 @@ overlap.
 
 ## Full refresh
 
-The first call is:
+The procedure call is:
 
 ```sql
 CALL etl_gps_tidy();
@@ -139,9 +146,8 @@ minute when it introduces a conflict.
 - With no mode parameter, a deliberate later full refresh requires emptying
   the managed table before the next call. That database-changing operation
   must be reviewed and explicitly confirmed.
-- The initial database setup assumes `gps_tidy` either does not exist or
-  already has the documented schema. Replacing an older incompatible managed
-  table must be a separately confirmed action.
+- `CREATE TABLE IF NOT EXISTS` does not migrate an incompatible managed table.
+  Replacing an older schema is a separately confirmed database operation.
 
 ## Returned summary
 

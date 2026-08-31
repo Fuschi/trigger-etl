@@ -1,5 +1,8 @@
 # `smartwatchhigh_daily` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 `smartwatchhigh_daily` has one row per `(userId, date)` and reads only
 `smartwatchhigh_hourly`. The date and all 24 profile positions use UTC.
 
@@ -19,5 +22,5 @@ the whole observed day is unambiguous.
 
 `CALL etl_smartwatchhigh_daily();` is a parameterless transactional full
 rebuild with empty-source protection and cardinality checks. It must not overlap
-`etl_smartwatchhigh_hourly()`. Incremental refresh and deployment remain later,
-explicitly reviewed operations.
+`etl_smartwatchhigh_hourly()`. Incremental refresh is not implemented because
+this layer keeps no deletion-aware change log.

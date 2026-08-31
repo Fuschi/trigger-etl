@@ -1,10 +1,13 @@
 # `smartwatchhigh_tidy` data specification
 
+Shared cleaning, time and aggregation policy:
+[`architecture.md`](architecture.md).
+
 ## Purpose
 
 `smartwatchhigh_tidy` contains one unambiguous high-frequency smartwatch
 observation per participant and UTC minute. It retains the cardiovascular,
-respiratory and sleep-state measurements required by the later five-minute
+respiratory and sleep-state measurements required by the canonical five-minute
 layer without copying redundant calendar components.
 
 ```text
@@ -15,7 +18,7 @@ primary key: (userId, minute_ts)
 The raw `smartwatchhigh` and `user_smartwatchhigh` tables remain read only. The
 tidy table is deliberately selective and can be rebuilt from raw data.
 
-## Source assumptions to verify
+## Required source structure and interpretation
 
 The SQL expects:
 
@@ -28,11 +31,10 @@ user_smartwatchhigh
   deviceId, userId
 ```
 
-The downloaded raw snapshot exposes complete `event_ts` and `created_at`
-values. Before deployment, the primary schema must confirm their MariaDB types,
-the measurement types, mapping structure and available indexes. The procedure
-expects `created_at` to be `TIMESTAMP`; it reads that column with the session
-set to UTC before storing it as tidy `DATETIME(6)`.
+The definition requires `event_ts` to be `DATETIME`, `created_at` to be
+`TIMESTAMP` and the measurements to be numeric. It reads `created_at` with the
+session set to UTC before storing it as tidy `DATETIME(6)`. The event time has
+no timezone offset, so the ETL explicitly interprets it as UTC.
 
 The mapping table is assumed not to contain validity intervals. A device
 associated with more than one non-null participant is therefore excluded over
@@ -89,15 +91,15 @@ usable measurements from the same row.
 | `breathrate` | `1` through `100` | `-1`, `0`, `255` |
 | `sleeprate` | integer codes `0` through `4` | `-1` |
 
-The first three rules reproduce the historical limits and remove explicit
-device codes rather than inventing narrower clinical thresholds. No upper
+The first three rules remove explicit device codes rather than inventing
+narrower clinical thresholds. No upper
 heart-rate filter is applied: all positive raw values, from 41 through 203 bpm,
 are retained.
 
-The historical transformation also converted `sleeprate = 0` to `NULL`. The
-complete raw profile does not support destroying that code: it is concentrated
-at night and frequently transitions to codes 1 and 2. It may represent an
-awake state, but no authoritative device codebook has yet confirmed the label.
+The complete raw profile does not support converting `sleeprate = 0` to
+`NULL`: it is concentrated at night and frequently transitions to codes 1 and
+2. It may represent an awake state, but the available source metadata do not
+confirm that label.
 Tidy therefore retains codes 0 through 4 without assigning semantic stage
 names; only `-1` is treated as unavailable. Code 3 was absent from the snapshot
 but remains allowed by the observed code family.
@@ -135,9 +137,9 @@ oxygen saturation and 2–50 breaths per minute for breathing rate. Retained
 sleep-state codes contain 1,310,623 code-0 readings, 2,791,731 code-1 readings,
 1,480,477 code-2 readings and 43,472 code-4 readings.
 
-The earlier all-measurements-missing counts treated sleep code 0 as invalid and
-are therefore superseded. Final value-related row losses must be recalculated
-with the retained 0-through-4 rule during primary-database validation.
+Counts produced under a rule that treated sleep code 0 as missing are obsolete
+and are not used by this definition. Routine output follows the retained
+0-through-4 rule.
 
 ### Firmware-specific availability
 
@@ -194,20 +196,18 @@ one candidate from each firmware version.
 
 ## Five-minute implications
 
-The earlier five-minute population counts excluded sleep code 0 and must be
-recalculated after the current tidy definition is operationally validated.
-The continuous-measurement profile still shows that, for buckets containing at
-least two valid values:
+For buckets containing at least two valid values, the complete raw profile
+shows that:
 
 - heart rate varies within 98.89 percent of buckets;
 - oxygen saturation varies within 53.47 percent of buckets;
 - breathing rate varies within 99.75 percent of buckets;
 
-The later five-minute layer should therefore retain arithmetic mean, minimum,
+The canonical five-minute layer therefore retains arithmetic mean, minimum,
 maximum and reading counts for the three continuous measurements. `sleeprate`
-is categorical and must be represented by separate counts for codes 0 through
-4, not by an arithmetic mean. No minimum coverage threshold belongs in the
-core ETL.
+is categorical and is represented by separate counts for codes 0 through 4,
+not by an arithmetic mean. No minimum coverage threshold belongs in the core
+ETL.
 
 ## Full and incremental refresh
 
@@ -249,8 +249,9 @@ Scheduled executions must not overlap.
   may leave partial output. Empty the tidy table explicitly before retrying.
 - Deliberately requesting another full refresh requires emptying the managed
   table before the next call.
-- The historical `smartwatchhigh_tidy` schema is incompatible with this
-  definition and must not merely be truncated before first deployment.
+- `CREATE TABLE IF NOT EXISTS` does not migrate an incompatible managed table.
+  Replacing an older `smartwatchhigh_tidy` schema is a separately confirmed
+  database operation.
 
 ## Returned summary
 
@@ -269,6 +270,7 @@ inserted_tidy_rows
 total_tidy_rows
 ```
 
-Before deployment, primary-database validation must confirm the raw and mapping
-schemas, index definitions, device-to-participant cardinality, mapping-related
-row losses and runtime privileges.
+The complete raw profile above supports the measurement rules. Mapping
+cardinality, mapping-related losses and effective privileges are checked
+operationally against the selected database because they can change
+independently of this versioned definition.

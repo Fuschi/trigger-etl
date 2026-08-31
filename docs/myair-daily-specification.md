@@ -1,5 +1,8 @@
 # `myair_daily` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 `myair_daily` contains one row per `(userId, date)` and is derived only from
 `myair_hourly`. Dates and clock hours are UTC.
 
@@ -20,5 +23,5 @@ the device or firmware is `NULL` and ambiguity counts remain visible.
 
 `CALL etl_myair_daily();` is a transactional, parameterless full rebuild. Empty
 source data and count mismatches preserve the previous valid output. It must
-not overlap `etl_myair_hourly()`. Incremental refresh and production deployment
-remain separate, later decisions.
+not overlap `etl_myair_hourly()`. Incremental refresh is not implemented
+because this layer keeps no deletion-aware change log.

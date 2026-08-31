@@ -1,5 +1,8 @@
 # `gps_daily` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 `gps_daily` is derived only from `gps_hourly`. Its grain and primary key are
 `(userId, date)`, where `date` is the UTC calendar date.
 
@@ -22,5 +25,6 @@ retained only when every observed hour is unambiguous and all values agree.
 `CALL etl_gps_daily();` performs a parameterless transactional full rebuild.
 It refuses an empty source, verifies expected participant-day counts and rolls
 back any error. It must not overlap `etl_gps_hourly()`. Incremental refresh is
-deferred until a deletion-aware mechanism exists. Replacing an incompatible
-historical table requires separate explicit confirmation before deployment.
+not implemented because this layer keeps no deletion-aware change log.
+`CREATE TABLE IF NOT EXISTS` does not migrate an incompatible existing schema;
+schema replacement is a separate installation operation.

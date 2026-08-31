@@ -1,5 +1,7 @@
 # `sleep_tidy` data specification
 
+Shared cleaning and time policy: [`architecture.md`](architecture.md).
+
 ## Purpose
 
 `sleep_tidy` contains one unambiguous nightly summary per participant and raw
@@ -18,8 +20,8 @@ small curated result that can always be rebuilt from raw data.
 
 The raw source supplies `year`, `month` and `day`, plus clock components that
 are zero in 23,935 of 23,945 downloaded rows. The source does not supply a
-sleep-start or sleep-end timestamp, and no device codebook has yet established
-what the calendar date denotes.
+sleep-start or sleep-end timestamp, and the available source metadata do not
+establish what the calendar date denotes.
 
 Tidy therefore constructs `date` from the raw calendar fields and calls it the
 **raw reference date**. It must not be interpreted as either the sleep-start
@@ -30,7 +32,7 @@ are omitted because they do not provide a reliable nightly timestamp.
 expected to be a raw MariaDB `TIMESTAMP`; the procedure reads it in UTC and
 stores it as tidy `DATETIME(6)`.
 
-## Source assumptions to verify
+## Required source structure and interpretation
 
 The SQL expects:
 
@@ -45,9 +47,11 @@ user_sleep
   deviceId, userId
 ```
 
-The complete raw snapshot confirms the column names and observed contents.
-Before deployment, the primary database must still confirm MariaDB column
-types, indexes, participant-mapping cardinality and mapping-related row loss.
+The complete raw snapshot confirms the column names and observed contents. The
+definition requires numeric calendar and measurement columns, a timestamp-like
+`created_at`, and the two-column participant mapping shown above. Indexes and
+mapping cardinality are operational properties of the selected database and
+are checked during installation and focused validation.
 
 The mapping table is assumed not to contain validity intervals. A device
 associated with more than one non-null participant is therefore excluded over
@@ -218,8 +222,9 @@ run-history table is created. Scheduled executions must not overlap.
   whole-device ambiguity is excluded conservatively.
 - Deliberately requesting another full refresh requires emptying the managed
   table before the next call.
-- The historical `sleep_tidy` schema has a different primary key and must not
-  merely be truncated before first deployment of this definition.
+- `CREATE TABLE IF NOT EXISTS` does not migrate an incompatible managed table.
+  Replacing an older `sleep_tidy` schema is a separately confirmed database
+  operation.
 
 ## Returned summary
 
@@ -239,5 +244,6 @@ total_tidy_rows
 ```
 
 The complete per-rule row-loss profile is a focused validation result rather
-than a persistent rejection log. It must be recalculated after primary mapping
-validation and before deployment is considered complete.
+than a persistent rejection log. Mapping-related losses are recalculated when
+the selected database is audited because the mapping can change independently
+of this versioned definition.

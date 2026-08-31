@@ -2,216 +2,193 @@
 
 ## Purpose
 
-This document records the privileges needed by the account used to inspect,
-build and run the TRIGGER ETL.
+This document defines the privileges required to inspect, install and run the
+TRIGGER ETL while keeping raw sensor data read only.
 
-Database names and internal environment topology intentionally remain outside
-the repository. Replace the placeholders below using local operational
-configuration:
+Database names, hosts and account names are runtime configuration and must not
+be committed. Replace these placeholders locally:
 
 ```text
-<database>       target TRIGGER database
-<etl_user>       ETL account name
-<host>           allowed client host
-<managed_table>  table created and owned by the ETL
-<managed_view>   view created and owned by the ETL
-<procedure>      stored procedure created and owned by the ETL
+<database>  target database
+<owner>     account that installs table and procedure definitions
+<runner>    account that calls the installed procedures
+<host>      allowed client host
 ```
 
-The primary safety boundary is simple:
+The safety boundary is:
 
-- raw source tables are read-only;
-- only explicitly managed ETL objects may be changed;
-- database-wide destructive or write privileges should be avoided;
-- effective grants must be inspected before the first database-changing step.
+- raw and mapping tables may be read but never modified by this project;
+- only the ETL-managed tables and routines listed below may be created or
+  changed;
+- privileges are separated between definition installation and routine
+  execution when operationally practical;
+- the exact target database and effective account are checked before any DDL
+  or destructive managed-table operation.
 
-## Read-only inspection
+## Managed and source objects
 
-Designing tidy rules requires inspecting schemas, value distributions, key
-cardinalities and edge cases in the representative database.
+The ETL owns these persistent output tables:
 
-The minimum data privilege is:
+```text
+gps_tidy                 gps_5min                 gps_hourly                 gps_daily
+myair_tidy               myair_5min               myair_hourly               myair_daily
+smartwatchlow_tidy       smartwatchlow_5min       smartwatchlow_hourly       smartwatchlow_daily
+smartwatchhigh_tidy      smartwatchhigh_5min      smartwatchhigh_hourly      smartwatchhigh_daily
+sleep_tidy
+```
+
+Each table has a parameterless procedure named `etl_<table>`, for example
+`etl_gps_tidy` and `etl_gps_daily`.
+
+The read-only source boundary consists of:
+
+```text
+gps                 user_gps
+myair               user_myair
+smartwatchlow       user_smartwatchlow
+smartwatchhigh      user_smartwatchhigh
+sleep               user_sleep
+```
+
+No procedure issues `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `ALTER` or
+`DROP` against a source or mapping table.
+
+## Privileges by activity
+
+### Read-only design and validation
+
+Schema-wide `SELECT` is the simplest way to inspect schemas, distributions and
+output counts:
 
 ```sql
 GRANT SELECT
 ON `<database>`.*
-TO '<etl_user>'@'<host>';
+TO '<owner>'@'<host>';
 ```
 
-Schema-wide `SELECT` allows the account to inspect raw tables but does not allow
-their contents or definitions to be changed.
+Grant `SHOW VIEW` only if views must be inspected. No global administrative
+privilege is required.
 
-If view definitions must be inspected, also grant:
+### Installing definitions
 
-```sql
-GRANT SHOW VIEW
-ON `<database>`.*
-TO '<etl_user>'@'<host>';
-```
-
-Metadata in `information_schema` is normally visible according to the
-account's privileges. No global administrative privilege is required for the
-planned ETL work.
-
-## Creating stored procedures
-
-The account that creates stored procedures requires:
+The SQL files execute `CREATE TABLE IF NOT EXISTS` and
+`CREATE OR REPLACE PROCEDURE`. The installing account therefore requires:
 
 ```sql
 GRANT
+  CREATE,
   CREATE ROUTINE,
   ALTER ROUTINE
 ON `<database>`.*
-TO '<etl_user>'@'<host>';
+TO '<owner>'@'<host>';
 ```
 
-`CREATE ROUTINE` permits procedure creation. `ALTER ROUTINE` permits changing
-or dropping routines. MariaDB normally grants `ALTER ROUTINE` and `EXECUTE`
-automatically to a routine creator, but explicit grants make the intended
-operational permission model visible and do not depend on the
-`automatic_sp_privileges` server setting.
+The definitions include primary keys, secondary indexes and checks inside
+`CREATE TABLE`; they do not run a separate `ALTER TABLE` or `CREATE INDEX`.
+Loading a definition does not run its procedure and does not change raw data.
 
-If the same account calls the procedures, grant:
+MariaDB may automatically grant routine privileges to the creator depending on
+`automatic_sp_privileges`. Explicit grants make the intended policy
+independent of that setting.
+
+### Running procedures
+
+All procedures declare `SQL SECURITY INVOKER`. Database statements therefore
+run with the privileges of the account executing `CALL`, not with hidden
+privileges inherited from the routine definer.
+
+The runner needs:
+
+- `EXECUTE` on the installed routines;
+- `SELECT` on source, mapping and managed tables read by those routines;
+- `INSERT` and `DELETE` on managed output tables;
+- `CREATE TEMPORARY TABLES` because tidy procedures use connection-local
+  helper tables;
+- object-specific `DROP` on `myair_tidy`, `smartwatchlow_tidy` and
+  `smartwatchhigh_tidy` because their batched full-build error handlers use
+  `TRUNCATE TABLE` to remove partial output.
+
+The broad but understandable read and execution grants are:
 
 ```sql
-GRANT EXECUTE
+GRANT EXECUTE, CREATE TEMPORARY TABLES
 ON `<database>`.*
-TO '<etl_user>'@'<host>';
-```
+TO '<runner>'@'<host>';
 
-Avoid declaring a different `DEFINER` unless the account and privilege model
-have been deliberately designed. Procedures should state `SQL SECURITY`
-explicitly so execution does not depend on an unnoticed default.
-
-Official reference: [MariaDB stored routine privileges](https://mariadb.com/docs/server/server-usage/stored-routines/stored-functions/stored-routine-privileges).
-
-## Creating managed tables
-
-Creating a new table requires schema-level `CREATE`:
-
-```sql
-GRANT CREATE
+GRANT SELECT
 ON `<database>`.*
-TO '<etl_user>'@'<host>';
+TO '<runner>'@'<host>';
 ```
 
-Temporary tables, when used for intermediate calculations, require:
+`INSERT` and `DELETE` should be granted separately on each of the 17 managed
+tables. For example:
 
 ```sql
-GRANT CREATE TEMPORARY TABLES
-ON `<database>`.*
-TO '<etl_user>'@'<host>';
+GRANT SELECT, INSERT, DELETE
+ON `<database>`.`gps_tidy`
+TO '<runner>'@'<host>';
 ```
 
-Do not grant schema-wide `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER` or
-`INDEX`. Grant them only on ETL-managed objects:
+Repeat that object-specific grant for every managed table. Add the following
+three narrowly scoped grants for full-build cleanup:
 
 ```sql
-GRANT
-  SELECT,
-  INSERT,
-  UPDATE,
-  DELETE,
-  DROP,
-  ALTER,
-  INDEX
-ON `<database>`.`<managed_table>`
-TO '<etl_user>'@'<host>';
+GRANT DROP ON `<database>`.`myair_tidy`
+TO '<runner>'@'<host>';
+
+GRANT DROP ON `<database>`.`smartwatchlow_tidy`
+TO '<runner>'@'<host>';
+
+GRANT DROP ON `<database>`.`smartwatchhigh_tidy`
+TO '<runner>'@'<host>';
 ```
 
-The exact set can be reduced after the implementation is known. For example,
-an append-free full materialization may not need `UPDATE` or `DELETE`.
+No implemented procedure requires direct `UPDATE`, `ALTER` or `INDEX` at
+runtime.
 
-Raw tables must never receive object-specific write or DDL grants.
+## Refresh operations and transaction safety
 
-## Shadow tables and atomic replacement
+The current pipeline does not use shadow tables or `RENAME TABLE`.
 
-The rebuilt ETL should populate a shadow table, validate it and swap it into
-place instead of dropping the current valid table before a long insert.
+- GPS and Sleep tidy replacements use transactional `DELETE` plus `INSERT`.
+- Large tidy full builds are committed one participant at a time to keep the
+  InnoDB lock set bounded. Their handlers truncate partial output after an
+  ordinary SQL error.
+- Tidy incremental replacements use transactional delete and insert.
+- Five-minute, hourly and daily tables use transactional full replacement.
 
-MariaDB requires `DROP`, `CREATE` and `INSERT` privileges for every table
-participating in `RENAME TABLE`. These privileges must therefore cover the
-fixed managed names used in the swap, for example:
+For transactional replacements, a failed statement is rolled back and the
+previous complete output remains visible. A terminated connection or server
+failure during a batched tidy full build may prevent its error handler from
+running; partial output must then be explicitly emptied before retrying.
 
-```text
-<managed_table>
-<managed_table>__next
-<managed_table>__previous
-```
-
-Do not use unpredictable shadow-table names if the account relies on narrowly
-scoped object grants.
-
-An atomic swap can use:
-
-```sql
-RENAME TABLE
-  `<managed_table>` TO `<managed_table>__previous`,
-  `<managed_table>__next` TO `<managed_table>`;
-```
-
-Grant all required permissions on the fixed managed names before enabling the
-swap. `RENAME TABLE` does not transfer grants from one table name to another;
-permissions must be designed around the names used operationally.
-
-Official reference: [MariaDB RENAME TABLE](https://mariadb.com/docs/server/reference/sql-statements/data-definition/rename-table).
-
-## Views
-
-Creating a new view requires `CREATE VIEW` plus `SELECT` on the referenced
-columns:
-
-```sql
-GRANT
-  CREATE VIEW,
-  SHOW VIEW
-ON `<database>`.*
-TO '<etl_user>'@'<host>';
-```
-
-Replacing an existing view with `CREATE OR REPLACE VIEW` additionally requires
-`DROP` on that view. Because schema-wide `DROP` would also permit dropping raw
-tables, it must not be granted merely to manage views.
-
-Instead, choose one of these approaches:
-
-1. grant `DROP` only on the specific managed view;
-2. have an authorized owner replace the view;
-3. create a versioned new view and switch consumers separately.
-
-Views exposing participant data should select only the columns required by
-analyses. Do not expose email or other identifying attributes when a
-pseudonymous participant key is sufficient.
-
-Official reference: [MariaDB CREATE VIEW](https://mariadb.com/docs/server/server-usage/views/create-view).
+`TRUNCATE TABLE` is treated by MariaDB as a drop-and-recreate operation and
+causes an implicit commit. This is why the three batched procedures use it only
+as full-build error cleanup and why it requires object-specific `DROP`.
 
 ## Recommended account separation
 
-When practical, use two roles or accounts:
+When possible, use two accounts:
 
-### Object owner or deployment account
+### Definition owner
 
-May create and replace explicitly managed tables, views and routines. It has
-the narrowly scoped DDL privileges described above.
+Installs and replaces the reviewed table and routine definitions. It has the
+schema-level `CREATE`, `CREATE ROUTINE` and `ALTER ROUTINE` privileges and the
+required access to existing managed objects.
 
-### Runtime account
+### Nightly runner
 
-Needs only:
+Calls only approved procedures. It has `EXECUTE`, the read privileges needed
+by the routines, managed-table `INSERT`/`DELETE`, temporary-table creation and
+the three explicit cleanup grants described above. It does not need permission
+to create or replace persistent schema objects.
 
-- `EXECUTE` on approved procedures;
-- `SELECT` on outputs needed for validation;
-- no direct DDL privilege;
-- no direct raw-table write privilege.
+One account may fulfil both roles, but the raw/managed boundary remains the
+same.
 
-This separation prevents an execution script from modifying arbitrary schema
-objects even if its credentials are misused.
+## Privileges deliberately excluded
 
-During the early step-by-step rebuild, one account may temporarily perform both
-roles. If so, its effective grants must still follow the raw/managed boundary.
-
-## Privileges that should not be granted globally
-
-The ETL account does not need:
+The ETL does not require global privileges such as:
 
 ```text
 ALL PRIVILEGES
@@ -224,38 +201,48 @@ GRANT OPTION
 SET USER
 ```
 
-It should not receive database-wide write or destructive privileges unless a
-specific implementation makes that unavoidable and the exception is reviewed.
+Avoid schema-wide `DROP`, `ALTER`, `UPDATE` or other write privileges merely
+for convenience. In particular, never grant object-specific write privileges
+on raw or mapping tables.
 
-## Verification queries
+## Verify the effective account and grants
 
-Inspect the current account:
-
-```sql
-SELECT CURRENT_USER(), USER();
-SHOW GRANTS FOR CURRENT_USER;
-```
-
-Inspect schema-level privileges:
+Inside MariaDB, identify the authenticated identity and the account whose
+privileges are effective:
 
 ```sql
 SELECT
-  GRANTEE,
-  TABLE_SCHEMA,
-  PRIVILEGE_TYPE
+    CURRENT_USER() AS privilege_account,
+    USER() AS connected_identity;
+
+SHOW GRANTS FOR CURRENT_USER;
+SELECT DATABASE() AS selected_database;
+```
+
+`CURRENT_USER()` is the account MariaDB used for privilege checking. `USER()`
+shows the login identity supplied by the client and may differ because of host
+matching or authentication configuration.
+
+Inspect schema privileges:
+
+```sql
+SELECT
+    GRANTEE,
+    TABLE_SCHEMA,
+    PRIVILEGE_TYPE
 FROM information_schema.SCHEMA_PRIVILEGES
 WHERE TABLE_SCHEMA = '<database>'
 ORDER BY GRANTEE, PRIVILEGE_TYPE;
 ```
 
-Inspect table and view privileges:
+Inspect table privileges:
 
 ```sql
 SELECT
-  GRANTEE,
-  TABLE_SCHEMA,
-  TABLE_NAME,
-  PRIVILEGE_TYPE
+    GRANTEE,
+    TABLE_SCHEMA,
+    TABLE_NAME,
+    PRIVILEGE_TYPE
 FROM information_schema.TABLE_PRIVILEGES
 WHERE TABLE_SCHEMA = '<database>'
 ORDER BY GRANTEE, TABLE_NAME, PRIVILEGE_TYPE;
@@ -265,77 +252,26 @@ Inspect routine privileges:
 
 ```sql
 SELECT
-  GRANTEE,
-  ROUTINE_SCHEMA,
-  ROUTINE_NAME,
-  PRIVILEGE_TYPE
+    GRANTEE,
+    ROUTINE_SCHEMA,
+    ROUTINE_NAME,
+    PRIVILEGE_TYPE
 FROM information_schema.ROUTINE_PRIVILEGES
 WHERE ROUTINE_SCHEMA = '<database>'
 ORDER BY GRANTEE, ROUTINE_NAME, PRIVILEGE_TYPE;
 ```
 
-## Checklist before changing the database
+## Pre-deployment checklist
 
-- Confirm the exact database selected by the connection.
-- Run `SHOW GRANTS FOR CURRENT_USER`.
-- Confirm raw tables have no write or DDL grants.
-- List the exact managed objects that may change.
-- Confirm whether the action is read-only, creates a new object or replaces an
-  existing object.
-- Confirm the privileges needed for every shadow-table name.
-- Confirm procedure `DEFINER` and `SQL SECURITY` behaviour.
-- Require explicit confirmation before executing DDL.
-- Validate output keys and row counts before an atomic swap.
-- Record any privilege change outside credentials and secrets.
+- Confirm `SELECT DATABASE()` returns the intended target.
+- Confirm `CURRENT_USER()` is the expected privilege account.
+- Review `SHOW GRANTS FOR CURRENT_USER`.
+- Verify that source and mapping tables have no ETL write grants.
+- Verify that DDL and write privileges apply only to the named managed objects.
+- Inspect each installed routine for `SQL SECURITY INVOKER`.
+- Load definitions before granting access to the nightly runner.
+- Validate primary-key uniqueness, coverage bounds and row summaries before
+  scheduling the complete pipeline.
 
-## Objects used by the rebuilt components
-
-The implemented tidy definitions narrow the generic placeholders above to
-these managed objects:
-
-```text
-gps_tidy
-etl_gps_tidy
-myair_tidy
-etl_myair_tidy
-smartwatchlow_tidy
-etl_smartwatchlow_tidy
-smartwatchhigh_tidy
-etl_smartwatchhigh_tidy
-sleep_tidy
-etl_sleep_tidy
-gps_5min
-etl_gps_5min
-myair_5min
-etl_myair_5min
-smartwatchlow_5min
-etl_smartwatchlow_5min
-smartwatchhigh_5min
-etl_smartwatchhigh_5min
-```
-
-Their source boundaries are read-only `SELECT` on `gps`, `user_gps`, `myair`
-and `user_myair`, plus `smartwatchlow`, `user_smartwatchlow`, `smartwatchhigh`
-and `user_smartwatchhigh`, plus `sleep` and `user_sleep`. Execution requires
-`SELECT`, `INSERT` and `DELETE` on the corresponding managed tidy table. The
-MyAir, SmartwatchLow and SmartwatchHigh full-build error handlers also use
-`TRUNCATE TABLE` on their managed tidy table to remove participant batches
-committed before a later batch failed, so the caller additionally needs
-object-specific `DROP` on `myair_tidy`, `smartwatchlow_tidy` and
-`smartwatchhigh_tidy`. The smaller Sleep rebuild remains in one transaction and
-does not use `TRUNCATE` inside its procedure. All tidy procedures create
-connection-local temporary helper tables, so the invoking privilege model must
-also account for `CREATE TEMPORARY TABLES`.
-
-The four five-minute procedures read only their corresponding tidy table and
-use `SELECT`, `DELETE` and `INSERT` on the managed `*_5min` table. Their initial
-full implementations do not read raw tables, create temporary tables, truncate
-tables or drop objects. They use one consistent InnoDB transaction so a failed
-replacement rolls back to the previous complete aggregate. Initial creation of
-each table and routine still requires the owner/deployment privileges described
-above.
-
-The procedures use `SQL SECURITY INVOKER`: the calling account, rather than an
-implicit privileged definer, must possess the required runtime privileges.
-Before granting any permission, compare the exact operations in the relevant
-file under `etl/sql/` with the chosen owner/runtime account separation.
+References: [MariaDB stored routine privileges](https://mariadb.com/docs/server/server-usage/stored-routines/stored-functions/stored-routine-privileges),
+[MariaDB TRUNCATE TABLE](https://mariadb.com/docs/server/reference/sql-statements/table-statements/truncate-table).

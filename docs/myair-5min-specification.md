@@ -1,5 +1,8 @@
 # `myair_5min` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 ## Purpose and grain
 
 `myair_5min` is the canonical five-minute environmental layer derived only
@@ -45,7 +48,7 @@ The first three summarize the non-null tidy values in the bucket.
 measurement, from zero through five. When it is zero, all three statistics are
 `NULL`.
 
-The retained measurements and currently documented units are:
+The retained measurements and documented interpretations are:
 
 | Group | Measurements | Unit or interpretation |
 |---|---|---|
@@ -100,7 +103,7 @@ count requires non-null minimum, mean and maximum ordered as
 
 ## Refresh model
 
-The first procedure is parameterless and full-only:
+The procedure is parameterless and uses a full replacement:
 
 ```sql
 CALL etl_myair_5min();
@@ -110,12 +113,9 @@ It reads one consistent `myair_tidy` snapshot and replaces the aggregate with
 transactional `DELETE` plus `INSERT`. An empty source raises an error before
 deletion, and an SQL error rolls back the complete replacement.
 
-This deliberately precedes incremental design. A watermark over currently
-present tidy rows cannot detect that an older tidy row was removed by a later
-correction. After the full definition is operationally validated, its runtime
-and lock footprint must determine whether the correct next step is an
-affected-key handoff, complete-source comparison or fixed-name shadow-table
-swap.
+The full rebuild is the implemented correctness policy. A watermark over
+currently present tidy rows cannot detect that an older tidy row was removed
+by a correction, and this layer has no separate deletion log.
 
 The procedure returns start and finish time, source rows, distinct source
 buckets, deleted rows, inserted rows and final rows. It creates no persistent
@@ -128,8 +128,8 @@ state or run history.
 - A bucket with one observed minute is retained exactly like a bucket with five
   observed minutes; coverage filtering belongs downstream.
 - `source_created_at_max` is freshness metadata, not deletion-aware state.
-- The full transaction may be too large for repeated production execution and
-  must be timed on the primary server before scheduling.
+- Runtime and lock use must be monitored because the replacement is one
+  transaction.
 - The procedure must not overlap `etl_myair_tidy()`.
-- An older incompatible `myair_5min` table requires a separately confirmed
-  replacement before first deployment.
+- `CREATE TABLE IF NOT EXISTS` does not migrate an incompatible existing
+  schema; schema replacement is a separate installation operation.

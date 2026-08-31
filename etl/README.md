@@ -1,50 +1,52 @@
-# ETL workspace
-
-This directory contains the rebuilt tidy and canonical five-minute components
-currently under review.
-
-The previous SQL procedures, orchestration scripts, cron example and diagnostic
-extractor were removed so the ETL can be rebuilt and understood one component
-at a time.
-
-Current files:
+# ETL execution
 
 ```text
-etl/
-└── sql/
-    ├── gps_tidy.sql
-    ├── gps_5min.sql
-    ├── myair_tidy.sql
-    ├── myair_5min.sql
-    ├── sleep_tidy.sql
-    ├── smartwatchhigh_tidy.sql
-    ├── smartwatchhigh_5min.sql
-    ├── smartwatchlow_tidy.sql
-    └── smartwatchlow_5min.sql
+sql/             table and stored-procedure definitions
+run_etl.sh       dependency-ordered nightly runner
+crontab.example  cron example
 ```
 
-The SQL definitions have been compiled and exercised with temporary synthetic
-MariaDB fixtures. No persistent test suite is stored in the repository while
-the implementation is being reviewed piece by piece.
+Each SQL file creates its managed table when absent and replaces one
+parameterless procedure. Loading a definition does not execute it or modify raw
+tables.
 
-Each SQL file defines one output table and one parameterless procedure. Tidy
-procedures automatically choose full or incremental refresh without a separate
-state table. The initial five-minute procedures are deliberately full-only so
-they remain correct when a tidy correction removes a previously materialized
-minute.
+Tidy procedures run a full build when their table is empty and an incremental
+refresh otherwise. Five-minute, hourly and daily procedures use transactional
+full replacement. Sleep ends at its nightly tidy layer.
 
-- `gps_tidy.sql` has been validated against the representative database. Its
-  specification is in
-  [docs/gps-tidy-specification.md](../docs/gps-tidy-specification.md).
-- `myair_tidy.sql` has completed full and incremental operational validation.
-  Its specification is in
-  [docs/myair-tidy-specification.md](../docs/myair-tidy-specification.md).
-- `smartwatchlow_tidy.sql`, `smartwatchhigh_tidy.sql` and `sleep_tidy.sql` have
-  passed local synthetic validation but retain the primary-database validation
-  tasks listed in their specifications.
-- The four `*_5min.sql` definitions share the participant/UTC-bucket grain and
-  are documented in their corresponding `docs/*-5min-specification.md` files.
+Shared behaviour is documented in
+[`docs/architecture.md`](../docs/architecture.md).
 
-No deployment script or scheduler is included yet. Database execution remains
-manual and requires an explicit target confirmation. Five-minute operational
-validation should proceed one stream at a time, starting with GPS.
+## Run
+
+```bash
+ETL_DATABASE=<database> ./etl/run_etl.sh
+```
+
+The database can alternatively be the first argument. To select another local
+MariaDB client configuration:
+
+```bash
+ETL_DATABASE=<database> \
+ETL_DEFAULTS_FILE=/absolute/path/to/client.cnf \
+./etl/run_etl.sh
+```
+
+The runner calls all 17 procedures in dependency order, stops on the first
+error and uses `flock` to prevent overlapping runs.
+
+## Cron
+
+Replace the placeholders in [`crontab.example`](crontab.example), then copy its
+active lines into:
+
+```bash
+crontab -e
+```
+
+Cron uses the server timezone. Credentials must be available through the
+MariaDB client configuration.
+
+Installation commands are in
+[`docs/install-etl.md`](../docs/install-etl.md); required privileges are in
+[`docs/database-permissions.md`](../docs/database-permissions.md).

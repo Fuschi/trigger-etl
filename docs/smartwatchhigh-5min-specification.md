@@ -1,5 +1,8 @@
 # `smartwatchhigh_5min` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 ## Purpose and grain
 
 `smartwatchhigh_5min` is the canonical five-minute cardiovascular,
@@ -54,10 +57,9 @@ sleeprate_4_n
 ```
 
 `sleeprate_n` counts all non-null sleep-state minutes and equals the sum of the
-five code counts. Code zero is deliberately retained; the historical
-five-minute definition omitted it because the earlier tidy layer incorrectly
-treated it as missing. No dominant state is selected because ties would
-require an arbitrary rule and the code labels remain undocumented.
+five code counts. Code zero is deliberately retained as an observed category.
+No dominant state is selected because ties would require an arbitrary rule and
+the code labels are not established by a device codebook.
 
 ## Coverage, provenance and firmware availability
 
@@ -88,7 +90,7 @@ available.
 
 ## Refresh model
 
-The initial parameterless procedure performs a full rebuild:
+The parameterless procedure performs a full rebuild:
 
 ```sql
 CALL etl_smartwatchhigh_5min();
@@ -100,21 +102,18 @@ deletion; any SQL error rolls back the previous complete table. The returned
 summary reports UTC start and finish, source rows, distinct source buckets,
 deleted, inserted and final rows.
 
-Incremental processing is deferred until the full layer is operationally
-validated. A simple maximum timestamp from currently present tidy rows cannot
-detect a tidy row removed by a later correction. Runtime and lock measurement
-must precede choosing affected-key propagation, complete comparison or a
-fixed-name shadow-table swap.
+Full replacement is the implemented correctness policy. A maximum timestamp
+from currently present tidy rows cannot detect a tidy row removed by a later
+correction, and this layer keeps no separate deletion state.
 
 ## Limitations
 
 - Means and state counts describe available minutes only; coverage counts must
   accompany interpretation.
 - Sleep-state code labels are unresolved and must remain neutral.
-- The analysis report that historically displayed only codes 1 through 4 must
-  be updated separately if code-zero availability is to be visualized.
 - `source_created_at_max` is freshness metadata, not deletion-aware state.
-- The full transaction must be measured before production scheduling.
+- Runtime and lock use must be monitored because the replacement is one
+  transaction.
 - The procedure must not overlap `etl_smartwatchhigh_tidy()`.
-- An incompatible historical `smartwatchhigh_5min` table requires explicit
-  replacement before first deployment.
+- `CREATE TABLE IF NOT EXISTS` does not migrate an incompatible existing
+  schema; schema replacement is a separate installation operation.

@@ -2,51 +2,28 @@
 
 ## Purpose
 
-This repository is being rebuilt from a deliberately minimal starting point.
-It will contain the MariaDB ETL that transforms raw TRIGGER sensor data into
-small, understandable, analysis-ready datasets.
+This repository contains the MariaDB ETL that transforms raw TRIGGER sensor
+data into small, understandable, analysis-ready datasets.
 
-Work incrementally. Implement and validate one stream and one layer at a time.
-Do not recreate the previous pipeline wholesale unless the user explicitly
-asks for it.
+Change and validate one stream and one layer at a time unless the user
+explicitly requests a cross-cutting change.
 
-## Current status
+## Implemented architecture
 
-- The previous ETL implementation was intentionally removed on 2026-08-19.
-- The first rebuilt component is the small `gps_tidy` implementation.
-- `myair_tidy` is the second rebuilt definition and has completed full and
-  incremental operational validation.
-- `smartwatchlow_tidy` is the third rebuilt definition. Its raw snapshot has
-  been profiled, and its source schema, indexes and mapping cardinality have
-  been verified. Mapping-related raw row loss has been measured, while final
-  deduplication and deployment validation remain outstanding.
-- `smartwatchhigh_tidy` is the fourth rebuilt definition. Its complete raw
-  snapshot has been profiled, its historical cleaning rules have been reviewed,
-  and its full and incremental SQL has passed local synthetic MariaDB tests.
-  Primary source schema, index, participant-mapping and deployment validation
-  remain outstanding.
-- `sleep_tidy` is the fifth rebuilt definition. Its complete raw snapshot has
-  been profiled, nightly reference-date and version-selection rules have been
-  documented, and its full and incremental SQL has passed local synthetic
-  MariaDB tests. Primary source schema, index, participant-mapping and
-  deployment validation remain outstanding.
-- Canonical full-build definitions now exist for `gps_5min`, `myair_5min`,
-  `smartwatchlow_5min` and `smartwatchhigh_5min`. Each uses participant plus
-  UTC five-minute bucket as its key and has passed local synthetic MariaDB
-  tests. They remain undeployed and deliberately do not implement incremental
-  refresh until deletion-aware propagation and production runtime are known.
-- Canonical full-build hourly definitions now exist for the same four streams.
-  They use participant plus UTC hour as their key, weight each observed
-  five-minute bucket equally, preserve bucket and minute coverage, and have
-  passed local synthetic MariaDB tests. They remain undeployed and full-only.
-- Canonical full-build daily definitions now exist for the same four streams.
-  Their key is participant plus UTC date; daily means weight available hours
-  equally, and general plus measurement-specific JSON profiles store exactly
-  24 five-minute coverage counts. They passed local synthetic MariaDB tests
-  and remain undeployed and full-only.
-- No database deployment is represented by the current repository state.
-- Historical files remain recoverable from Git history, but must not be copied
-  back without reviewing their assumptions.
+- GPS, MyAir, SmartwatchLow and SmartwatchHigh implement tidy minute,
+  five-minute, hourly and daily layers.
+- Sleep implements its natural participant-night tidy layer only.
+- Tidy procedures automatically choose full or incremental refresh.
+- Five-minute, hourly and daily procedures use transactional full replacement.
+- The five-minute bucket is the common analytical unit and all temporal
+  boundaries are UTC.
+- Higher-level means use equal temporal-unit weighting: equal minutes inside a
+  bucket, equal observed buckets inside an hour and equal observed hours inside
+  a day.
+- Daily general and measurement-specific profiles contain exactly 24
+  five-minute bucket counts ordered from hour 00 through 23.
+- The definitive shared policy is in `docs/architecture.md`; stream-specific
+  ranges and exceptions are in the corresponding specifications.
 
 ## Working method
 
@@ -60,13 +37,12 @@ Before changing the project:
 5. Write down the intended grain, key, retained columns, exclusions, units and
    expected row-loss diagnostics before implementing SQL.
 
-Prefer the smallest complete step. Do not add orchestration, higher-resolution
-aggregations or unrelated streams while the current tidy specification is still
-being designed or validated.
+Prefer the smallest complete step. Do not mix unrelated orchestration, layers
+or streams into a focused data-definition change.
 
 ## Data-layer boundaries
 
-The intended high-level flow is:
+The implemented high-level flow is:
 
 ```text
 raw -> tidy -> canonical 5-minute -> optional hourly/daily -> analysis marts
@@ -115,11 +91,10 @@ decision rather than inventing a scientific cutoff.
 
 ## Analytical requirements
 
-The analysis repository currently implies these requirements:
+The analysis-ready tables follow these requirements:
 
 - the shared temporal unit is a fixed five-minute bucket;
-- timestamps and bucket boundaries must use an explicitly documented timezone,
-  expected to be UTC;
+- timestamps and bucket boundaries use UTC as documented in the architecture;
 - the participant-level analytical key is `userId` plus the appropriate time
   bucket;
 - `deviceId` and `firmware` are provenance attributes, not automatically the
@@ -138,10 +113,8 @@ The analysis repository currently implies these requirements:
   variables remain analysis-specific unless explicitly promoted to a mart.
 
 Do not assume that steps or calories are increments, cumulative counters or
-sums until their sensor semantics have been verified. Existing analyses have
-observed repeated values within a five-minute bucket and currently prefer a
-bucket mean; treat this as evidence to verify, not an undocumented universal
-rule.
+sums. Raw profiling observed repeated values within five-minute intervals, so
+the implemented policy uses a bucket mean and does not sum repeated copies.
 
 ## Deduplication and participant binding
 
@@ -153,10 +126,9 @@ Every deduplication rule must define:
 - aggregate row counts lost at each stage;
 - boundary cases involving missing timestamps or upload times.
 
-Do not use a device-to-participant mapping over all history without considering
-device reassignment. Before implementation, determine whether mapping data
-contain validity dates or whether a conservative whole-device exclusion is the
-only defensible option.
+The current mapping tables have no validity intervals. Exclude a device over
+its complete history when it maps to multiple participants; do not silently
+select one participant or infer reassignment dates.
 
 ## Materialization and execution safety
 
@@ -178,9 +150,9 @@ only defensible option.
   the simpler transaction impractical.
 - Use one common source cutoff for all streams in a run when cross-stream
   consistency matters.
-- Full historical rebuilds are acceptable during the early learning phase.
-  Add incremental processing only after the full transformation is correct and
-  covered by tests.
+- Tidy incremental processing uses its documented ingestion watermark and
+  affected-key rebuild. Five-minute, hourly and daily layers remain full
+  replacements because output watermarks cannot detect upstream deletions.
 - A skipped run, empty output or failed validation must not be reported as a
   successful run.
 
@@ -221,15 +193,15 @@ temporary local MariaDB instance before considering a definition complete.
 
 ## Observability
 
-Keep initial observability simple. Each executable step should return:
+Keep observability simple. Each executable step should return:
 
 - start and finish time;
 - source and output row counts;
 - the number of affected time partitions;
 - source, deleted, inserted and final row counts.
 
-Do not build a large generic audit platform before the first stream is correct.
-Introduce persistent run history only when it has a concrete operational use.
+Do not add a generic audit platform without a concrete operational use.
+Persistent run history is outside the implemented design.
 
 ## Privacy and security
 

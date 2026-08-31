@@ -1,9 +1,12 @@
 # `smartwatchlow_5min` data specification
 
+Shared cleaning, UTC and temporal-weighting rules are defined in
+[`architecture.md`](architecture.md).
+
 ## Purpose and grain
 
 `smartwatchlow_5min` is the canonical five-minute activity, blood-pressure and
-temperature layer derived only from `smartwatchlow_tidy`.
+temperature-labelled sensor layer derived only from `smartwatchlow_tidy`.
 
 ```text
 grain:       participant x UTC five-minute bucket
@@ -41,20 +44,18 @@ buckets. Summing minute copies would therefore multiply the recorded value.
 
 This layer uses the arithmetic mean as the bucket estimate and retains minimum,
 maximum and count to expose the rare within-bucket disagreements. It does not
-retain the historical sums, first values or last values, and it does not claim
-that either measurement is a cumulative counter. The calorie unit remains
-unresolved despite the downstream provisional `kcal/5 min` label.
+retain sums, first values or last values, and it does not claim that either
+measurement is a cumulative counter. The calorie unit is not established, so
+the ETL keeps the recorded sensor scale without labelling it as kcal.
 
 ## Other measurement policy
 
-Blood-pressure and temperature values have already been cleaned independently
-in tidy. `bphigh` and `bplow` remain a paired measurement: their counts must be
-equal and their bucket means preserve `bphigh_mean >= bplow_mean`. Pulse
-pressure remains analysis-specific.
+`bphigh` and `bplow` remain a paired measurement: their counts must be equal
+and their bucket means preserve `bphigh_mean >= bplow_mean`. Pulse pressure
+remains analysis-specific.
 
-Temperature means, minima and maxima preserve all technically valid tidy
-values, including low positive readings that may represent an unworn sensor or
-cold exposure. No additional physiological filter is applied.
+`bodytemp` and `skintemp` are aggregated exactly as retained by tidy, including
+zero and values above 45. Their meaning and unit remain unresolved.
 
 ## Coverage and provenance
 
@@ -81,7 +82,7 @@ does not remove the bucket or another available variable.
 
 ## Refresh model
 
-The first procedure is a parameterless full rebuild:
+The procedure is a parameterless full rebuild:
 
 ```sql
 CALL etl_smartwatchlow_5min();
@@ -92,21 +93,19 @@ An empty source fails before deletion; any SQL error rolls back to the previous
 complete aggregate. It returns source rows, distinct source buckets, deleted,
 inserted and final row counts together with UTC start and finish times.
 
-Incremental refresh is intentionally deferred until the full definition is
-operationally validated. A watermark over current tidy rows cannot detect a
-tidy row removed by a correction. Runtime measurement must determine whether
-the later deletion-aware solution uses affected-key propagation, complete
-comparison or a fixed shadow-table swap.
+Full replacement is the implemented correctness policy because a watermark
+over current tidy rows cannot detect a tidy row removed by a correction. This
+layer does not maintain separate deletion state.
 
 ## Limitations
 
 - Means describe only available minutes; counts are required to interpret
   incomplete buckets.
-- Step and calorie means reproduce the observed repeated-bucket behaviour but
-  remain provisional until device documentation confirms their semantics.
+- Step and calorie means describe the recorded bucket-level scale; they are not
+  interpreted as totals or cumulative counters.
 - `source_created_at_max` is not sufficient incremental state.
-- The full transaction must be timed and its lock footprint checked before
-  scheduling on the primary server.
+- Runtime and lock use must be monitored because the replacement is one
+  transaction.
 - The procedure must not overlap `etl_smartwatchlow_tidy()`.
-- An incompatible historical `smartwatchlow_5min` table requires explicit
-  replacement before first deployment.
+- `CREATE TABLE IF NOT EXISTS` does not migrate an incompatible existing
+  schema; schema replacement is a separate installation operation.
