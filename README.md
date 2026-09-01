@@ -23,15 +23,19 @@ Sleep ends at `sleep_tidy` because its source is already nightly.
 
 See [docs/architecture.md](docs/architecture.md) for the complete shared policy.
 
-## Implemented tables
+## Data specifications
 
-| Stream | Tidy | Five-minute | Hourly | Daily |
-|---|---|---|---|---|
-| GPS | [spec](docs/gps-tidy-specification.md) | [spec](docs/gps-5min-specification.md) | [spec](docs/gps-hourly-specification.md) | [spec](docs/gps-daily-specification.md) |
-| MyAir | [spec](docs/myair-tidy-specification.md) | [spec](docs/myair-5min-specification.md) | [spec](docs/myair-hourly-specification.md) | [spec](docs/myair-daily-specification.md) |
-| SmartwatchLow | [spec](docs/smartwatchlow-tidy-specification.md) | [spec](docs/smartwatchlow-5min-specification.md) | [spec](docs/smartwatchlow-hourly-specification.md) | [spec](docs/smartwatchlow-daily-specification.md) |
-| SmartwatchHigh | [spec](docs/smartwatchhigh-tidy-specification.md) | [spec](docs/smartwatchhigh-5min-specification.md) | [spec](docs/smartwatchhigh-hourly-specification.md) | [spec](docs/smartwatchhigh-daily-specification.md) |
-| Sleep | [spec](docs/sleep-tidy-specification.md) | — | — | — |
+Cleaning rules, raw distributions and deduplication decisions remain specific
+to each tidy stream:
+
+- [GPS tidy](docs/gps-tidy-specification.md)
+- [MyAir tidy](docs/myair-tidy-specification.md)
+- [SmartwatchLow tidy](docs/smartwatchlow-tidy-specification.md)
+- [SmartwatchHigh tidy](docs/smartwatchhigh-tidy-specification.md)
+- [Sleep tidy](docs/sleep-tidy-specification.md)
+
+The shared five-minute, hourly and daily behaviour is documented once in the
+[aggregate data specification](docs/aggregations.md).
 
 Primary keys are `(userId, minute_ts)` for tidy sensor data,
 `(userId, bucket_5min)` for five-minute data, `(userId, hour_ts)` for hourly

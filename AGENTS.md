@@ -23,7 +23,8 @@ explicitly requests a cross-cutting change.
 - Daily general and measurement-specific profiles contain exactly 24
   five-minute bucket counts ordered from hour 00 through 23.
 - The definitive shared policy is in `docs/architecture.md`; stream-specific
-  ranges and exceptions are in the corresponding specifications.
+  cleaning evidence is in the tidy specifications and shared aggregate
+  behaviour is in `docs/aggregations.md`.
 
 ## Working method
 

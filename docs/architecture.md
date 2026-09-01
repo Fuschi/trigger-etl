@@ -18,38 +18,15 @@ Sleep is already a nightly summary and ends at `sleep_tidy`.
 
 Raw tables are read only and remain the source of truth.
 
-## Five-minute bucket
+## Temporal aggregation
 
-Five minutes are the common interval chosen for GPS, MyAir and smartwatch
-data because they are the minimum common interval across the devices. This is
-a project convention, not a claim of statistical optimality.
-
-All buckets use UTC boundaries. A day can contain at most 288 five-minute
-buckets. No minimum coverage is required by the ETL.
-
-## Aggregation weights
-
-The implemented aggregation is hierarchical:
-
-```text
-tidy → 5 minutes: mean of available participant-minutes
-5 minutes → hour: mean of available 5-minute means
-hour → day: mean of available hourly means
-```
-
-Each observed five-minute bucket has the same weight in the hourly mean. A
-bucket based on one valid minute and a bucket based on five valid minutes are
-therefore treated equally in higher aggregations.
-
-Likewise, each observed hour has the same weight in the daily mean, regardless
-of whether it contains one or twelve buckets.
-
-This is an explicit simplification. The ETL does not claim that it is better
-than weighting by the number of observations. Coverage columns retain the
-number of minutes, buckets and hours so the choice can be reviewed in analyses.
-
-Minima and maxima are propagated as extrema. Smartwatch sleep-state codes are
-categorical and are counted, never averaged.
+Five minutes are the common interval because they are the minimum common
+interval across the devices. Higher layers give equal weight to each observed
+temporal unit: one- and five-minute buckets are equivalent in hourly means,
+and sparse and complete hours are equivalent in daily means. This is a project
+simplification, not a claim of statistical optimality. See
+[`aggregations.md`](aggregations.md) for keys, coverage and stream-specific
+rules.
 
 ## Cleaning and deduplication
 
@@ -102,21 +79,6 @@ Filters are technical, not clinical:
   documented total/component identity.
 
 Exact limits and unresolved units are recorded in the tidy specifications.
-
-## Coverage and provenance
-
-Coverage counts do not change aggregation weights:
-
-- `observed_minute_n`: represented minutes in a five-minute bucket;
-- `observed_5min_n`: represented buckets in an hour;
-- `hours_n`, `five_min_n`, `minute_n`: represented units in a day;
-- measurement-specific counts: non-null availability for that measurement.
-
-Daily `*_5min_profile` columns are JSON arrays of 24 counts, ordered from UTC
-hour 00 through 23. They contain coverage, not measurement values.
-
-`deviceId` and `firmware` are provenance. Their scalar value is retained only
-when the period is unambiguous; counts expose mixed periods.
 
 ## Time and joins
 
