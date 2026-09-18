@@ -1,35 +1,34 @@
--- ============================================================================
--- gps_hourly.sql
---
--- Source table (read only): gps_5min
--- Managed objects: gps_hourly and etl_gps_hourly()
--- Grain: one row per participant and UTC hour.
--- Means give equal weight to each available five-minute bucket.
--- ============================================================================
+-- One row per participant and UTC hour.
+-- Means weight available five-minute means equally.
+-- Each variable has its own five-minute and minute counts. Full rebuild.
 
 CREATE TABLE IF NOT EXISTS gps_hourly (
-  userId BIGINT NOT NULL,                         -- Pseudonymous participant identifier.
-  hour_ts DATETIME(6) NOT NULL,                   -- Beginning of the UTC hour.
-  source_created_at_max DATETIME(6) NOT NULL,     -- Freshest represented tidy ingestion time.
-  observed_5min_n TINYINT UNSIGNED NOT NULL,      -- Represented five-minute buckets, 1 through 12.
-  observed_minute_n TINYINT UNSIGNED NOT NULL,    -- Represented participant-minutes, 1 through 60.
+  userId BIGINT NOT NULL,
+  hour_ts DATETIME(6) NOT NULL,
+  source_created_at_max DATETIME(6) NOT NULL,
+  observed_5min_n TINYINT UNSIGNED NOT NULL,
+  observed_minute_n TINYINT UNSIGNED NOT NULL,
 
-  mixed_device_5min_n TINYINT UNSIGNED NOT NULL,  -- Source buckets already containing >1 device.
-  mixed_firmware_5min_n TINYINT UNSIGNED NOT NULL,-- Source buckets already containing >1 firmware.
-  deviceId VARCHAR(128) NULL,                     -- Present only when the complete hour is unambiguous.
-  firmware VARCHAR(128) NULL,                     -- Present only when the complete hour is unambiguous.
+  mixed_device_5min_n TINYINT UNSIGNED NOT NULL,
+  mixed_firmware_5min_n TINYINT UNSIGNED NOT NULL,
+  deviceId VARCHAR(128) NULL,
+  firmware VARCHAR(128) NULL,
 
-  longitude_mean DOUBLE NOT NULL,                 -- Mean of available five-minute means.
+  longitude_5min_n TINYINT UNSIGNED NOT NULL,
+  longitude_minute_n TINYINT UNSIGNED NOT NULL,
+  latitude_5min_n TINYINT UNSIGNED NOT NULL,
+  latitude_minute_n TINYINT UNSIGNED NOT NULL,
+  longitude_mean DOUBLE NOT NULL,
   longitude_min DOUBLE NOT NULL,
   longitude_max DOUBLE NOT NULL,
   latitude_mean DOUBLE NOT NULL,
   latitude_min DOUBLE NOT NULL,
   latitude_max DOUBLE NOT NULL,
-  accuracy_mean DOUBLE NULL,
-  accuracy_min DOUBLE NULL,
-  accuracy_max DOUBLE NULL,
-  accuracy_5min_n TINYINT UNSIGNED NOT NULL,      -- Buckets contributing accuracy.
-  accuracy_minute_n TINYINT UNSIGNED NOT NULL,    -- Underlying minutes contributing accuracy.
+  accuracy_mean DOUBLE NOT NULL,
+  accuracy_min DOUBLE NOT NULL,
+  accuracy_max DOUBLE NOT NULL,
+  accuracy_5min_n TINYINT UNSIGNED NOT NULL,
+  accuracy_minute_n TINYINT UNSIGNED NOT NULL,
 
   PRIMARY KEY (userId, hour_ts),
   INDEX idx_gps_hourly_hour (hour_ts),
@@ -40,13 +39,16 @@ CREATE TABLE IF NOT EXISTS gps_hourly (
   CONSTRAINT chk_gps_hourly_coverage
     CHECK (observed_5min_n BETWEEN 1 AND 12
        AND observed_minute_n BETWEEN observed_5min_n AND 60
-       AND accuracy_5min_n BETWEEN 0 AND observed_5min_n
-       AND accuracy_minute_n BETWEEN accuracy_5min_n AND observed_minute_n),
+       AND accuracy_5min_n = observed_5min_n
+       AND accuracy_minute_n = observed_minute_n),
   CONSTRAINT chk_gps_hourly_provenance
     CHECK (mixed_device_5min_n BETWEEN 0 AND observed_5min_n
        AND mixed_firmware_5min_n BETWEEN 0 AND observed_5min_n
        AND (deviceId IS NULL OR mixed_device_5min_n = 0)
        AND (firmware IS NULL OR mixed_firmware_5min_n = 0)),
+  CONSTRAINT chk_gps_hourly_coordinate_counts
+    CHECK (longitude_5min_n = observed_5min_n AND latitude_5min_n = observed_5min_n
+       AND longitude_minute_n = observed_minute_n AND latitude_minute_n = observed_minute_n),
   CONSTRAINT chk_gps_hourly_longitude
     CHECK (longitude_min BETWEEN -180 AND 180 AND longitude_max BETWEEN -180 AND 180
        AND longitude_min <= longitude_mean AND longitude_mean <= longitude_max),
@@ -54,11 +56,7 @@ CREATE TABLE IF NOT EXISTS gps_hourly (
     CHECK (latitude_min BETWEEN -90 AND 90 AND latitude_max BETWEEN -90 AND 90
        AND latitude_min <= latitude_mean AND latitude_mean <= latitude_max),
   CONSTRAINT chk_gps_hourly_accuracy
-    CHECK ((accuracy_5min_n = 0 AND accuracy_minute_n = 0
-            AND accuracy_mean IS NULL AND accuracy_min IS NULL AND accuracy_max IS NULL)
-        OR (accuracy_5min_n > 0 AND accuracy_minute_n > 0
-            AND accuracy_mean IS NOT NULL AND accuracy_min IS NOT NULL AND accuracy_max IS NOT NULL
-            AND accuracy_min > 0 AND accuracy_min <= accuracy_mean AND accuracy_mean <= accuracy_max))
+    CHECK (accuracy_min <= accuracy_mean AND accuracy_mean <= accuracy_max)
 ) ENGINE = InnoDB;
 
 DELIMITER //
@@ -77,12 +75,12 @@ main: BEGIN
 
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
-    ROLLBACK;                                     -- Preserve the previous complete hourly table.
+    ROLLBACK;
     RESIGNAL;
   END;
 
   SET v_started_at = UTC_TIMESTAMP(6);
-  START TRANSACTION WITH CONSISTENT SNAPSHOT;      -- Read one stable five-minute snapshot.
+  START TRANSACTION WITH CONSISTENT SNAPSHOT;
 
   SELECT COUNT(*) INTO v_source_rows FROM gps_5min;
   IF v_source_rows = 0 THEN
@@ -101,6 +99,7 @@ main: BEGIN
   INSERT INTO gps_hourly (
     userId, hour_ts, source_created_at_max, observed_5min_n, observed_minute_n,
     mixed_device_5min_n, mixed_firmware_5min_n, deviceId, firmware,
+    longitude_5min_n, longitude_minute_n, latitude_5min_n, latitude_minute_n,
     longitude_mean, longitude_min, longitude_max,
     latitude_mean, latitude_min, latitude_max,
     accuracy_mean, accuracy_min, accuracy_max, accuracy_5min_n, accuracy_minute_n
@@ -115,6 +114,7 @@ main: BEGIN
     SUM(f.firmware_n > 1),
     CASE WHEN SUM(f.device_n > 1) = 0 AND COUNT(DISTINCT f.deviceId) = 1 THEN MIN(f.deviceId) END,
     CASE WHEN SUM(f.firmware_n > 1) = 0 AND COUNT(DISTINCT f.firmware) = 1 THEN MIN(f.firmware) END,
+    COUNT(f.longitude_mean), SUM(f.longitude_n), COUNT(f.latitude_mean), SUM(f.latitude_n),
     AVG(f.longitude_mean), MIN(f.longitude_min), MAX(f.longitude_max),
     AVG(f.latitude_mean), MIN(f.latitude_min), MAX(f.latitude_max),
     AVG(f.accuracy_mean), MIN(f.accuracy_min), MAX(f.accuracy_max),

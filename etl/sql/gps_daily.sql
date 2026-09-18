@@ -1,9 +1,8 @@
--- ============================================================================
--- gps_daily.sql
--- Source (read only): gps_hourly. Grain: participant x UTC calendar date.
--- Each daily mean gives equal weight to every available hourly mean.
--- Every JSON coverage profile has 24 entries ordered from hour 00 through 23.
--- ============================================================================
+-- One row per participant and UTC day.
+-- Means weight available hourly means equally.
+-- Each variable has counts and a 24-entry profile, ordered 00 through 23 UTC.
+-- Profiles count distinct five-minute buckets, not individual observations.
+-- All three profiles match: every retained position includes accuracy.
 
 CREATE TABLE IF NOT EXISTS gps_daily (
   userId BIGINT NOT NULL,
@@ -22,15 +21,20 @@ CREATE TABLE IF NOT EXISTS gps_daily (
   deviceId VARCHAR(128) NULL,
   firmware VARCHAR(128) NULL,
 
-  position_hours_n TINYINT UNSIGNED NOT NULL,
-  position_5min_n SMALLINT UNSIGNED NOT NULL,
-  position_minute_n SMALLINT UNSIGNED NOT NULL,
-  position_complete_hours_n TINYINT UNSIGNED NOT NULL,
-  position_5min_profile JSON NOT NULL,
+  longitude_hours_n TINYINT UNSIGNED NOT NULL,
+  longitude_5min_n SMALLINT UNSIGNED NOT NULL,
+  longitude_minute_n SMALLINT UNSIGNED NOT NULL,
+  longitude_complete_hours_n TINYINT UNSIGNED NOT NULL,
+  longitude_5min_profile JSON NOT NULL,
+  latitude_hours_n TINYINT UNSIGNED NOT NULL,
+  latitude_5min_n SMALLINT UNSIGNED NOT NULL,
+  latitude_minute_n SMALLINT UNSIGNED NOT NULL,
+  latitude_complete_hours_n TINYINT UNSIGNED NOT NULL,
+  latitude_5min_profile JSON NOT NULL,
   longitude_mean DOUBLE NOT NULL, longitude_min DOUBLE NOT NULL, longitude_max DOUBLE NOT NULL,
   latitude_mean DOUBLE NOT NULL, latitude_min DOUBLE NOT NULL, latitude_max DOUBLE NOT NULL,
 
-  accuracy_mean DOUBLE NULL, accuracy_min DOUBLE NULL, accuracy_max DOUBLE NULL,
+  accuracy_mean DOUBLE NOT NULL, accuracy_min DOUBLE NOT NULL, accuracy_max DOUBLE NOT NULL,
   accuracy_hours_n TINYINT UNSIGNED NOT NULL,
   accuracy_5min_n SMALLINT UNSIGNED NOT NULL,
   accuracy_minute_n SMALLINT UNSIGNED NOT NULL,
@@ -54,12 +58,18 @@ CREATE TABLE IF NOT EXISTS gps_daily (
        AND mixed_firmware_5min_n BETWEEN 0 AND five_min_n
        AND (deviceId IS NULL OR ambiguous_device_hour_n = 0)
        AND (firmware IS NULL OR ambiguous_firmware_hour_n = 0)),
-  CONSTRAINT chk_gps_daily_position
-    CHECK (position_hours_n = hours_n
-       AND position_5min_n = five_min_n
-       AND position_minute_n = minute_n
-       AND position_complete_hours_n = complete_hours_n
-       AND JSON_VALID(position_5min_profile) AND JSON_LENGTH(position_5min_profile) = 24),
+  CONSTRAINT chk_gps_daily_longitude_coverage
+    CHECK (longitude_hours_n = hours_n
+       AND longitude_5min_n = five_min_n
+       AND longitude_minute_n = minute_n
+       AND longitude_complete_hours_n = complete_hours_n
+       AND JSON_VALID(longitude_5min_profile) AND JSON_LENGTH(longitude_5min_profile) = 24),
+  CONSTRAINT chk_gps_daily_latitude_coverage
+    CHECK (latitude_hours_n = hours_n
+       AND latitude_5min_n = five_min_n
+       AND latitude_minute_n = minute_n
+       AND latitude_complete_hours_n = complete_hours_n
+       AND JSON_VALID(latitude_5min_profile) AND JSON_LENGTH(latitude_5min_profile) = 24),
   CONSTRAINT chk_gps_daily_longitude
     CHECK (longitude_min BETWEEN -180 AND 180 AND longitude_max BETWEEN -180 AND 180
        AND longitude_min <= longitude_mean AND longitude_mean <= longitude_max),
@@ -68,17 +78,13 @@ CREATE TABLE IF NOT EXISTS gps_daily (
        AND latitude_min <= latitude_mean AND latitude_mean <= latitude_max),
   CONSTRAINT chk_gps_daily_measurement_counts
     CHECK (
-      accuracy_hours_n BETWEEN 0 AND hours_n
-      AND accuracy_5min_n BETWEEN accuracy_hours_n AND five_min_n
-      AND accuracy_minute_n BETWEEN accuracy_5min_n AND minute_n
-      AND accuracy_complete_hours_n BETWEEN 0 AND accuracy_hours_n
+      accuracy_hours_n = hours_n
+      AND accuracy_5min_n = five_min_n
+      AND accuracy_minute_n = minute_n
+      AND accuracy_complete_hours_n = complete_hours_n
     ),
   CONSTRAINT chk_gps_daily_measurement_stats
-    CHECK (
-      ((accuracy_hours_n = 0 AND accuracy_mean IS NULL AND accuracy_min IS NULL AND accuracy_max IS NULL)
-       OR (accuracy_hours_n > 0 AND accuracy_mean IS NOT NULL AND accuracy_min IS NOT NULL
-         AND accuracy_max IS NOT NULL AND accuracy_min <= accuracy_mean AND accuracy_mean <= accuracy_max))
-    ),
+    CHECK (accuracy_min <= accuracy_mean AND accuracy_mean <= accuracy_max),
   CONSTRAINT chk_gps_daily_measurement_profiles
     CHECK (
       JSON_VALID(accuracy_5min_profile) AND JSON_LENGTH(accuracy_5min_profile) = 24
@@ -91,6 +97,7 @@ CREATE OR REPLACE PROCEDURE etl_gps_daily()
 SQL SECURITY INVOKER
 MODIFIES SQL DATA
 main: BEGIN
+  DECLARE v_group_concat_max_len BIGINT UNSIGNED;
   DECLARE v_started_at DATETIME(6);
   DECLARE v_finished_at DATETIME(6);
   DECLARE v_source_rows BIGINT UNSIGNED DEFAULT 0;
@@ -100,10 +107,13 @@ main: BEGIN
   DECLARE v_total_rows BIGINT UNSIGNED DEFAULT 0;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
-    ROLLBACK;                                      -- Restore the preceding complete daily table.
+    ROLLBACK;
+    SET SESSION group_concat_max_len = v_group_concat_max_len;
     RESIGNAL;
   END;
 
+  SET v_group_concat_max_len = @@SESSION.group_concat_max_len;
+  SET SESSION group_concat_max_len = GREATEST(v_group_concat_max_len, 65536);
   SET v_started_at = UTC_TIMESTAMP(6);
   START TRANSACTION WITH CONSISTENT SNAPSHOT;
   SELECT COUNT(*) INTO v_source_rows FROM gps_hourly;
@@ -121,8 +131,10 @@ main: BEGIN
     complete_hours_n, five_min_profile,
     ambiguous_device_hour_n, ambiguous_firmware_hour_n,
     mixed_device_5min_n, mixed_firmware_5min_n, deviceId, firmware,
-    position_hours_n, position_5min_n, position_minute_n,
-    position_complete_hours_n, position_5min_profile,
+    longitude_hours_n, longitude_5min_n, longitude_minute_n,
+    longitude_complete_hours_n, longitude_5min_profile,
+    latitude_hours_n, latitude_5min_n, latitude_minute_n,
+    latitude_complete_hours_n, latitude_5min_profile,
     longitude_mean, longitude_min, longitude_max,
     latitude_mean, latitude_min, latitude_max,
     accuracy_mean, accuracy_min, accuracy_max, accuracy_hours_n, accuracy_5min_n,
@@ -183,6 +195,9 @@ main: BEGIN
     COUNT(g.hour_ts), COALESCE(SUM(g.observed_5min_n), 0),
     COALESCE(SUM(g.observed_minute_n), 0), COALESCE(SUM(g.observed_5min_n = 12), 0),
     JSON_ARRAYAGG(COALESCE(g.observed_5min_n, 0) ORDER BY g.hour_n),
+    COUNT(g.hour_ts), COALESCE(SUM(g.observed_5min_n), 0),
+    COALESCE(SUM(g.observed_minute_n), 0), COALESCE(SUM(g.observed_5min_n = 12), 0),
+    JSON_ARRAYAGG(COALESCE(g.observed_5min_n, 0) ORDER BY g.hour_n),
     AVG(g.longitude_mean), MIN(g.longitude_min), MAX(g.longitude_max),
     AVG(g.latitude_mean), MIN(g.latitude_min), MAX(g.latitude_max),
     AVG(g.accuracy_mean), MIN(g.accuracy_min), MAX(g.accuracy_max),
@@ -202,6 +217,7 @@ main: BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'gps_daily final count differs from source day count';
   END IF;
   COMMIT;
+  SET SESSION group_concat_max_len = v_group_concat_max_len;
   SET v_finished_at = UTC_TIMESTAMP(6);
   SELECT 'full' AS run_mode, v_started_at AS started_at, v_finished_at AS finished_at,
     v_source_rows AS source_hourly_rows, v_source_days AS source_days,
