@@ -1,7 +1,8 @@
 -- One paired GPS position per participant-minute.
 -- Accuracy is copied unchanged: zero and negative values are retained; raw accuracy is NOT NULL.
 -- Existing coordinate, provenance and ambiguity rules are unchanged.
--- Empty output: full build. Otherwise: rebuild dates with newly ingested rows.
+-- Empty output: full build. Otherwise: rebuild participant-minutes touched by
+-- newly ingested rows.
 
 CREATE TABLE IF NOT EXISTS gps_tidy (
   userId      BIGINT       NOT NULL,
@@ -73,6 +74,50 @@ main: BEGIN
 
   SET v_is_full = (v_previous_created_at IS NULL);
 
+  DROP TEMPORARY TABLE IF EXISTS tmp_gps_device_map;
+  CREATE TEMPORARY TABLE tmp_gps_device_map (
+    deviceId VARCHAR(100) NOT NULL,
+    userId BIGINT NOT NULL,
+    PRIMARY KEY (deviceId),
+    INDEX idx_tmp_gps_device_user (userId)
+  ) ENGINE = InnoDB;
+
+  INSERT INTO tmp_gps_device_map (deviceId, userId)
+  SELECT
+    ug.deviceId,
+    MIN(ug.userId)
+  FROM user_gps AS ug
+  WHERE ug.deviceId IS NOT NULL
+    AND TRIM(ug.deviceId) <> ''
+    AND ug.userId IS NOT NULL
+  GROUP BY ug.deviceId
+  HAVING COUNT(DISTINCT ug.userId) = 1;
+
+  DROP TEMPORARY TABLE IF EXISTS tmp_gps_minutes;
+  CREATE TEMPORARY TABLE tmp_gps_minutes (
+    userId BIGINT NOT NULL,
+    minute_ts DATETIME(6) NOT NULL,
+    PRIMARY KEY (userId, minute_ts)
+  ) ENGINE = InnoDB;
+
+  IF NOT v_is_full THEN
+    INSERT INTO tmp_gps_minutes (userId, minute_ts)
+    SELECT DISTINCT
+      dm.userId,
+      TIMESTAMP(
+        DATE(g.event_ts),
+        MAKETIME(HOUR(g.event_ts), MINUTE(g.event_ts), 0)
+      )
+    FROM tmp_gps_device_map AS dm
+    INNER JOIN gps AS g
+      ON g.deviceId = dm.deviceId
+    WHERE g.firmware IS NOT NULL
+      AND TRIM(g.firmware) <> ''
+      AND g.event_ts IS NOT NULL
+      AND g.created_at >= v_previous_created_at
+      AND g.created_at <= v_raw_max_created_at;
+  END IF;
+
   DROP TEMPORARY TABLE IF EXISTS tmp_gps_days;
   CREATE TEMPORARY TABLE tmp_gps_days (
     event_date DATE NOT NULL,
@@ -80,23 +125,15 @@ main: BEGIN
   ) ENGINE = InnoDB;
 
   IF v_is_full THEN
-
     INSERT INTO tmp_gps_days (event_date)
     SELECT DISTINCT DATE(g.event_ts)
     FROM gps AS g
     WHERE g.event_ts IS NOT NULL
-      AND (
-        g.created_at <= v_raw_max_created_at
-        OR g.created_at IS NULL
-      );
+      AND (g.created_at <= v_raw_max_created_at OR g.created_at IS NULL);
   ELSE
-
     INSERT INTO tmp_gps_days (event_date)
-    SELECT DISTINCT DATE(g.event_ts)
-    FROM gps AS g
-    WHERE g.event_ts IS NOT NULL
-      AND g.created_at >= v_previous_created_at
-      AND g.created_at <= v_raw_max_created_at;
+    SELECT DISTINCT DATE(m.minute_ts)
+    FROM tmp_gps_minutes AS m;
   END IF;
 
   SELECT COUNT(*)
@@ -106,10 +143,16 @@ main: BEGIN
   SELECT COUNT(*)
   INTO v_source_rows
   FROM gps AS g
-  INNER JOIN tmp_gps_days AS d
-    ON d.event_date = DATE(g.event_ts)
-  WHERE g.created_at <= v_raw_max_created_at
-     OR g.created_at IS NULL;
+  LEFT JOIN tmp_gps_device_map AS dm
+    ON dm.deviceId = g.deviceId
+  LEFT JOIN tmp_gps_minutes AS scope
+    ON scope.userId = dm.userId
+   AND scope.minute_ts = TIMESTAMP(
+     DATE(g.event_ts),
+     MAKETIME(HOUR(g.event_ts), MINUTE(g.event_ts), 0)
+   )
+  WHERE (v_is_full OR scope.userId IS NOT NULL)
+    AND (g.created_at <= v_raw_max_created_at OR g.created_at IS NULL);
 
   IF v_is_full THEN
 
@@ -118,8 +161,9 @@ main: BEGIN
   ELSE
     DELETE t
     FROM gps_tidy AS t
-    INNER JOIN tmp_gps_days AS d
-      ON d.event_date = DATE(t.event_ts);
+    INNER JOIN tmp_gps_minutes AS m
+      ON m.userId = t.userId
+     AND m.minute_ts = t.minute_ts;
     SET v_deleted_rows = ROW_COUNT();
   END IF;
 
@@ -138,6 +182,7 @@ main: BEGIN
   WITH
   required_rows AS (
     SELECT
+      dm.userId,
       g.deviceId,
       g.firmware,
       g.event_ts,
@@ -152,11 +197,16 @@ main: BEGIN
       MIN(g.created_at) OVER (
         PARTITION BY g.deviceId, g.firmware, g.event_ts
       ) AS first_created_at
-    FROM gps AS g
-    INNER JOIN tmp_gps_days AS d
-      ON d.event_date = DATE(g.event_ts)
-    WHERE g.deviceId IS NOT NULL
-      AND TRIM(g.deviceId) <> ''
+    FROM tmp_gps_device_map AS dm
+    INNER JOIN gps AS g
+      ON g.deviceId = dm.deviceId
+    LEFT JOIN tmp_gps_minutes AS scope
+      ON scope.userId = dm.userId
+     AND scope.minute_ts = TIMESTAMP(
+       DATE(g.event_ts),
+       MAKETIME(HOUR(g.event_ts), MINUTE(g.event_ts), 0)
+     )
+    WHERE (v_is_full OR scope.userId IS NOT NULL)
       AND g.firmware IS NOT NULL
       AND TRIM(g.firmware) <> ''
       AND g.event_ts IS NOT NULL
@@ -166,6 +216,7 @@ main: BEGIN
 
   earliest_payloads AS (
     SELECT
+      userId,
       deviceId,
       firmware,
       event_ts,
@@ -177,6 +228,7 @@ main: BEGIN
     FROM required_rows
     WHERE created_at = first_created_at
     GROUP BY
+      userId,
       deviceId,
       firmware,
       event_ts,
@@ -208,6 +260,7 @@ main: BEGIN
 
   valid_positions AS (
     SELECT
+      userId,
       deviceId,
       firmware,
       event_ts,
@@ -222,41 +275,13 @@ main: BEGIN
       AND latitude BETWEEN -90 AND 90
   ),
 
-  device_map AS (
-    SELECT
-      ug.deviceId,
-      MIN(ug.userId) AS userId,
-      COUNT(DISTINCT ug.userId) AS user_n
-    FROM user_gps AS ug
-    WHERE ug.deviceId IS NOT NULL
-      AND TRIM(ug.deviceId) <> ''
-    GROUP BY ug.deviceId
-  ),
-
-  participant_rows AS (
-    SELECT
-      m.userId,
-      p.deviceId,
-      p.firmware,
-      p.event_ts,
-      p.created_at,
-      p.minute_ts,
-      p.longitude,
-      p.latitude,
-      p.accuracy
-    FROM valid_positions AS p
-    INNER JOIN device_map AS m
-      ON m.deviceId = p.deviceId
-    WHERE m.user_n = 1
-  ),
-
   participant_minute_checked AS (
     SELECT
       p.*,
       COUNT(*) OVER (
         PARTITION BY p.userId, p.minute_ts
       ) AS candidate_n
-    FROM participant_rows AS p
+    FROM valid_positions AS p
   )
 
   SELECT

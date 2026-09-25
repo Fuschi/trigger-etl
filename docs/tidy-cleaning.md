@@ -33,8 +33,8 @@ Sleep constructs a valid date from `year`, `month`, `day`.
 | Participant binding | Keep devices mapped to exactly one distinct non-null `userId`; reject unmapped or ambiguous devices. No reassignment dates are inferred. |
 | Participant-minute ambiguity | Reject minutes containing multiple remaining usable device/firmware candidates. |
 
-MyAir and smartwatch resolve mappings before event deduplication; GPS resolves
-them after coordinate validation. All assess participant ambiguity after
+All four sensor streams resolve mappings before event deduplication and assess
+participant ambiguity after
 removing unusable rows. Ambiguous bindings exclude complete device histories
 when those histories are rebuilt; see [incremental limits](architecture.md#tidy-refresh).
 

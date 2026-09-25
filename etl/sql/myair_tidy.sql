@@ -16,8 +16,8 @@
 --
 -- An empty myair_tidy triggers a full build, committed one participant at a
 -- time to keep InnoDB lock usage bounded. Otherwise the procedure finds raw
--- rows whose created_at is greater than or equal to MAX(myair_tidy.created_at), then fully
--- rebuilds their event dates in one incremental transaction.
+-- rows whose created_at is greater than or equal to MAX(myair_tidy.created_at),
+-- then rebuilds their participant-minutes in one incremental transaction.
 -- ============================================================================
 
 
@@ -96,8 +96,8 @@ main: BEGIN                                        -- Open a named procedure blo
   DECLARE v_user_id BIGINT DEFAULT NULL;           -- Participant currently processed by the cursor.
   DECLARE v_cursor_done BOOLEAN DEFAULT FALSE;     -- TRUE after the cursor has no more participants.
 
-  DECLARE v_affected_days BIGINT UNSIGNED DEFAULT 0; -- Number of event dates rebuilt.
-  DECLARE v_source_rows BIGINT UNSIGNED DEFAULT 0;   -- Raw rows in the dates being rebuilt.
+  DECLARE v_affected_days BIGINT UNSIGNED DEFAULT 0; -- Event dates represented by the scope.
+  DECLARE v_source_rows BIGINT UNSIGNED DEFAULT 0;   -- Raw rows in the selected scope.
   DECLARE v_deleted_rows BIGINT UNSIGNED DEFAULT 0;  -- Tidy rows removed before rebuilding.
   DECLARE v_inserted_rows BIGINT UNSIGNED DEFAULT 0; -- Clean rows inserted by this run.
   DECLARE v_batch_inserted_rows BIGINT UNSIGNED DEFAULT 0; -- Rows inserted for one participant.
@@ -141,12 +141,6 @@ main: BEGIN                                        -- Open a named procedure blo
 
   SET v_is_full = (v_previous_created_at IS NULL);  -- Select full or incremental mode automatically.
 
-  DROP TEMPORARY TABLE IF EXISTS tmp_myair_days;    -- Clear leftovers in the same DB session.
-  CREATE TEMPORARY TABLE tmp_myair_days (           -- Visible only to this connection.
-    event_date DATE NOT NULL,                       -- Calendar date derived from event_ts.
-    PRIMARY KEY (event_date)                        -- Store each affected date once.
-  ) ENGINE = InnoDB;                                -- Keep temporary changes transactional.
-
   DROP TEMPORARY TABLE IF EXISTS tmp_myair_device_map; -- Clear a previous call in this session.
   CREATE TEMPORARY TABLE tmp_myair_device_map (     -- Keep only unambiguous device assignments.
     deviceId VARCHAR(100) NOT NULL,                 -- Raw device identifier used by the source index.
@@ -166,35 +160,66 @@ main: BEGIN                                        -- Open a named procedure blo
   GROUP BY um.deviceId
   HAVING COUNT(DISTINCT um.userId) = 1;            -- Exclude devices assigned to several users.
 
-  IF v_is_full THEN                                 -- Empty tidy: process all visible dates.
-    INSERT INTO tmp_myair_days (event_date)         -- Build the complete list of event dates.
+  DROP TEMPORARY TABLE IF EXISTS tmp_myair_minutes;
+  CREATE TEMPORARY TABLE tmp_myair_minutes (
+    userId BIGINT NOT NULL,
+    minute_ts DATETIME(6) NOT NULL,
+    PRIMARY KEY (userId, minute_ts)
+  ) ENGINE = InnoDB;
+
+  IF NOT v_is_full THEN
+    INSERT INTO tmp_myair_minutes (userId, minute_ts)
+    SELECT DISTINCT
+      dm.userId,
+      TIMESTAMP(
+        DATE(m.event_ts),
+        MAKETIME(HOUR(m.event_ts), MINUTE(m.event_ts), 0)
+      )
+    FROM tmp_myair_device_map AS dm
+    INNER JOIN myair AS m
+      ON m.deviceId = dm.deviceId
+    WHERE m.firmware IS NOT NULL
+      AND TRIM(m.firmware) <> ''
+      AND m.event_ts IS NOT NULL
+      AND m.created_at >= v_previous_created_at
+      AND m.created_at <= v_raw_max_created_at;
+  END IF;
+
+  DROP TEMPORARY TABLE IF EXISTS tmp_myair_days;
+  CREATE TEMPORARY TABLE tmp_myair_days (
+    event_date DATE NOT NULL,
+    PRIMARY KEY (event_date)
+  ) ENGINE = InnoDB;
+
+  IF v_is_full THEN
+    INSERT INTO tmp_myair_days (event_date)
     SELECT DISTINCT DATE(m.event_ts)
     FROM myair AS m
-    WHERE m.event_ts IS NOT NULL                    -- A missing event time has no rebuild date.
-      AND (
-        m.created_at <= v_raw_max_created_at        -- Stay inside this run's frozen cutoff.
-        OR m.created_at IS NULL                     -- Include its date in full diagnostics.
-      );
-  ELSE                                              -- Populated tidy: include uploads at the watermark.
-    INSERT INTO tmp_myair_days (event_date)         -- Collect dates touched by new raw rows.
-    SELECT DISTINCT DATE(m.event_ts)
-    FROM myair AS m
-    WHERE m.event_ts IS NOT NULL                    -- Ignore rows without an event date.
-      AND m.created_at >= v_previous_created_at      -- No fixed lookback window is applied.
-      AND m.created_at <= v_raw_max_created_at;     -- Keep this run internally consistent.
+    WHERE m.event_ts IS NOT NULL
+      AND (m.created_at <= v_raw_max_created_at OR m.created_at IS NULL);
+  ELSE
+    INSERT INTO tmp_myair_days (event_date)
+    SELECT DISTINCT DATE(m.minute_ts)
+    FROM tmp_myair_minutes AS m;
   END IF;
 
   SELECT COUNT(*)
-  INTO v_affected_days                              -- Save the number of dates to rebuild.
+  INTO v_affected_days                              -- Save the number of represented dates.
   FROM tmp_myair_days;
 
   SELECT COUNT(*)
-  INTO v_source_rows                                -- Count all raw rows in affected dates.
+  INTO v_source_rows                                -- Count raw rows in the selected scope.
   FROM myair AS m
-  INNER JOIN tmp_myair_days AS d
-    ON d.event_date = DATE(m.event_ts)              -- Rebuild complete dates, including late uploads.
-  WHERE m.created_at <= v_raw_max_created_at        -- Use the same cutoff as the transformation.
-     OR m.created_at IS NULL;                       -- Count rows later rejected for missing upload time.
+  LEFT JOIN tmp_myair_device_map AS dm
+    ON dm.deviceId = m.deviceId
+  LEFT JOIN tmp_myair_minutes AS scope
+    ON scope.userId = dm.userId
+   AND scope.minute_ts = TIMESTAMP(
+     DATE(m.event_ts),
+     MAKETIME(HOUR(m.event_ts), MINUTE(m.event_ts), 0)
+   )
+  WHERE (v_is_full OR scope.userId IS NOT NULL)
+    AND (m.created_at <= v_raw_max_created_at OR m.created_at IS NULL);
 
   DROP TEMPORARY TABLE IF EXISTS tmp_myair_run_users; -- Clear a previous call in this session.
   CREATE TEMPORARY TABLE tmp_myair_run_users (      -- Participants that must be processed now.
@@ -206,16 +231,10 @@ main: BEGIN                                        -- Open a named procedure blo
     INSERT INTO tmp_myair_run_users (userId)
     SELECT DISTINCT dm.userId
     FROM tmp_myair_device_map AS dm;
-  ELSE                                              -- Incremental mode needs users in affected dates.
+  ELSE                                              -- Incremental mode needs affected users only.
     INSERT INTO tmp_myair_run_users (userId)
-    SELECT DISTINCT dm.userId
-    FROM tmp_myair_device_map AS dm
-    INNER JOIN myair AS m
-      ON m.deviceId = dm.deviceId                  -- Use the existing raw device index.
-    INNER JOIN tmp_myair_days AS d
-      ON d.event_date = DATE(m.event_ts)            -- Include complete affected event dates.
-    WHERE m.created_at <= v_raw_max_created_at      -- Apply the frozen cutoff to this user list.
-       OR m.created_at IS NULL;
+    SELECT DISTINCT m.userId
+    FROM tmp_myair_minutes AS m;
   END IF;
 
   IF NOT v_is_full THEN                             -- Keep incremental replacement all-or-nothing.
@@ -223,8 +242,9 @@ main: BEGIN                                        -- Open a named procedure blo
 
     DELETE t
     FROM myair_tidy AS t
-    INNER JOIN tmp_myair_days AS d
-      ON d.event_date = DATE(t.event_ts);           -- Remove prior results for rebuilt dates.
+    INNER JOIN tmp_myair_minutes AS m
+      ON m.userId = t.userId
+     AND m.minute_ts = t.minute_ts;
     SET v_deleted_rows = ROW_COUNT();               -- Save the incremental deletion count.
   END IF;
 
@@ -299,9 +319,14 @@ main: BEGIN                                        -- Open a named procedure blo
       FROM tmp_myair_device_map AS dm
       INNER JOIN myair AS m
         ON m.deviceId = dm.deviceId                -- Use the raw index whose first column is deviceId.
-      INNER JOIN tmp_myair_days AS d
-        ON d.event_date = DATE(m.event_ts)          -- Read only dates selected for rebuilding.
+      LEFT JOIN tmp_myair_minutes AS scope
+        ON scope.userId = dm.userId
+       AND scope.minute_ts = TIMESTAMP(
+         DATE(m.event_ts),
+         MAKETIME(HOUR(m.event_ts), MINUTE(m.event_ts), 0)
+       )
       WHERE dm.userId = v_user_id                  -- Keep this statement participant-sized.
+        AND (v_is_full OR scope.userId IS NOT NULL) -- Full history or affected incremental keys.
         AND m.firmware IS NOT NULL                  -- Retained as source provenance.
         AND TRIM(m.firmware) <> ''                  -- Reject blank firmware values.
         AND m.event_ts IS NOT NULL                  -- Required to construct the analytical minute.
@@ -493,8 +518,8 @@ main: BEGIN                                        -- Open a named procedure blo
     v_finished_at AS finished_at,                  -- UTC end of the successful procedure call.
     v_previous_created_at AS previous_created_at,  -- Watermark found before this run.
     v_raw_max_created_at AS raw_max_created_at,    -- Raw upper cutoff used by this run.
-    v_affected_days AS affected_days,              -- Number of complete event dates rebuilt.
-    v_source_rows AS source_rows,                  -- Raw rows seen in those event dates.
+    v_affected_days AS affected_days,              -- Event dates represented by the selected scope.
+    v_source_rows AS source_rows,                  -- Raw rows read for that scope.
     v_deleted_rows AS deleted_tidy_rows,           -- Existing tidy rows removed by this run.
     v_inserted_rows AS inserted_tidy_rows,         -- Clean tidy rows inserted by this run.
     v_total_rows AS total_tidy_rows;               -- Return one non-persistent summary row.

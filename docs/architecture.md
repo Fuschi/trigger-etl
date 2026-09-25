@@ -24,8 +24,7 @@ raw history up to that cutoff:
 
 | Stream | Rebuilt scope |
 |---|---|
-| GPS, MyAir | Event dates, across participants |
-| SmartwatchLow, SmartwatchHigh | Participant-minutes |
+| GPS, MyAir, SmartwatchLow, SmartwatchHigh | Participant-minutes |
 | Sleep | Participant/reference-date pairs |
 
 The inclusive boundary catches later arrivals with the same timestamp, but
