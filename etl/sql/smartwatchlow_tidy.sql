@@ -15,8 +15,8 @@
 --   CALL etl_smartwatchlow_tidy();
 --
 -- An empty smartwatchlow_tidy triggers a full build, committed one participant
--- at a time. Otherwise the procedure finds raw rows whose created_at is greater
--- than MAX(smartwatchlow_tidy.created_at) and rebuilds their complete
+-- at a time. Otherwise the procedure finds raw rows whose created_at is greater than or equal
+-- to MAX(smartwatchlow_tidy.created_at) and rebuilds their complete
 -- participant-minutes in one incremental transaction.
 -- ============================================================================
 
@@ -161,7 +161,7 @@ main: BEGIN                                        -- Open a named procedure blo
     WHERE s.firmware IS NOT NULL                   -- Required by the exact-event key.
       AND TRIM(s.firmware) <> ''                   -- Exclude missing firmware uploads.
       AND s.event_ts IS NOT NULL                   -- Required to construct the participant-minute.
-      AND s.created_at > v_previous_created_at     -- Select only uploads not yet represented.
+      AND s.created_at >= v_previous_created_at     -- Include uploads at the watermark.
       AND s.created_at <= v_raw_max_created_at;    -- Keep the run inside its frozen cutoff.
   END IF;
 
@@ -441,13 +441,18 @@ main: BEGIN                                        -- Open a named procedure blo
 
   CLOSE cur_smartwatchlow_users;
 
-  IF NOT v_is_full THEN                            -- Finish the one incremental transaction.
-    COMMIT;
-  END IF;
-
   SELECT COUNT(*)
   INTO v_total_rows                                -- Count the complete final tidy table.
   FROM smartwatchlow_tidy;
+
+  IF v_total_rows = 0 THEN                       -- Reject empty output in either refresh mode.
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'smartwatchlow refresh produced no tidy rows';
+  END IF;
+
+  IF NOT v_is_full THEN                          -- Commit only after checking the final output.
+    COMMIT;
+  END IF;
 
   SET v_finished_at = UTC_TIMESTAMP(6);            -- Record successful completion time.
   SET SESSION time_zone = v_old_time_zone;         -- Restore the caller's original timezone.

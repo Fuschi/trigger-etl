@@ -200,7 +200,8 @@ transaction.
 
 When `sleep_tidy` is populated, the procedure uses
 `MAX(sleep_tidy.created_at)` as its ingestion watermark. Raw uploads with a
-strictly greater `created_at` identify affected participant/reference-date
+`created_at` greater than or equal to the watermark identify affected
+participant/reference-date
 keys. The procedure deletes those tidy keys and rebuilds them from their
 complete raw history up to the same frozen cutoff. A later corrected summary
 therefore replaces the prior version. The delete and insert are one
@@ -211,8 +212,9 @@ run-history table is created. Scheduled executions must not overlap.
 
 ## Incremental limitations
 
-- A raw row inserted later with exactly the current tidy maximum `created_at`
-  is not detected by the strict `>` comparison.
+- The inclusive `>=` comparison reprocesses keys at the current watermark,
+  including rows uploaded later with that same timestamp. This also repeats
+  some work when no new uploads arrive.
 - A raw row inserted later with a `created_at` older than the tidy maximum is
   not detected.
 - If the newest upload is excluded, the tidy maximum may not advance and it

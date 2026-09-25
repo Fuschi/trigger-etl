@@ -233,7 +233,8 @@ and truncates partial full output before returning the original error.
 
 When the table is populated, the procedure uses
 `MAX(smartwatchlow_tidy.created_at)` as its ingestion watermark. It finds raw
-rows with a strictly greater `created_at`, identifies their affected
+rows with a `created_at` greater than or equal to the watermark, identifies
+their affected
 participant-minutes and rebuilds only those complete minutes from raw history.
 The incremental delete and inserts remain in one transaction, so an SQL error
 rolls back the complete incremental run.
@@ -244,8 +245,9 @@ Scheduled executions must not overlap.
 
 ## Incremental limitations
 
-- A raw row inserted later with exactly the current maximum `created_at` is not
-  detected by the strict `>` comparison.
+- The inclusive `>=` comparison reprocesses keys at the current watermark,
+  including rows uploaded later with that same timestamp. This also repeats
+  some work when no new uploads arrive.
 - Raw rows inserted later with a `created_at` older than the tidy maximum are
   not detected.
 - If all newest raw rows are excluded or are later copies of older events, the

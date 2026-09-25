@@ -99,9 +99,17 @@ Tidy procedures have no parameters. An empty output triggers a full build;
 otherwise `MAX(tidy.created_at)` is the watermark and affected dates or
 minutes are rebuilt from raw history.
 
+Every tidy procedure rejects a zero final row count in both refresh modes.
+Transactional replacements check this before committing, so an empty result
+rolls back the replacement. An incremental run with no new rows is successful
+when the final tidy table still contains data.
+
+The incremental comparison uses `>=`, so rows added later with the same
+maximum `created_at` are included. Keys at that boundary are rebuilt even when
+no new uploads arrive.
+
 Known limits of this simple watermark are:
 
-- rows added later with the same maximum `created_at` are not detected;
 - backfilled rows with an older `created_at` are not detected;
 - mapping-only changes are not detected;
 - excluded newest rows can be reconsidered on later runs.

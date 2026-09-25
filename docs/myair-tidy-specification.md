@@ -217,7 +217,8 @@ the next call starts in full mode again. Full error cleanup therefore requires
 
 When `myair_tidy` is populated, the procedure uses
 `MAX(myair_tidy.created_at)` as its ingestion watermark, finds raw rows with a
-strictly greater `created_at` and completely rebuilds every event date touched
+`created_at` greater than or equal to the watermark and completely rebuilds
+every event date touched
 by those rows. The incremental delete and all participant inserts remain in
 one InnoDB transaction, so an SQL failure rolls back the complete incremental
 run.
@@ -229,8 +230,9 @@ across devices and firmware versions.
 
 ## Incremental limitations
 
-- A raw row inserted later with exactly the current maximum `created_at` is not
-  detected by the strict `>` comparison.
+- The inclusive `>=` comparison reprocesses keys at the current watermark,
+  including rows uploaded later with that same timestamp. This also repeats
+  some work when no new uploads arrive.
 - Raw rows inserted later with a `created_at` older than the tidy maximum are
   not detected.
 - If all newest raw rows are excluded, the tidy maximum does not advance and

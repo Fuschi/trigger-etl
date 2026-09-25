@@ -16,7 +16,7 @@
 --
 -- An empty myair_tidy triggers a full build, committed one participant at a
 -- time to keep InnoDB lock usage bounded. Otherwise the procedure finds raw
--- rows whose created_at is greater than MAX(myair_tidy.created_at), then fully
+-- rows whose created_at is greater than or equal to MAX(myair_tidy.created_at), then fully
 -- rebuilds their event dates in one incremental transaction.
 -- ============================================================================
 
@@ -175,12 +175,12 @@ main: BEGIN                                        -- Open a named procedure blo
         m.created_at <= v_raw_max_created_at        -- Stay inside this run's frozen cutoff.
         OR m.created_at IS NULL                     -- Include its date in full diagnostics.
       );
-  ELSE                                              -- Populated tidy: inspect only newer uploads.
+  ELSE                                              -- Populated tidy: include uploads at the watermark.
     INSERT INTO tmp_myair_days (event_date)         -- Collect dates touched by new raw rows.
     SELECT DISTINCT DATE(m.event_ts)
     FROM myair AS m
     WHERE m.event_ts IS NOT NULL                    -- Ignore rows without an event date.
-      AND m.created_at > v_previous_created_at      -- No fixed lookback window is applied.
+      AND m.created_at >= v_previous_created_at      -- No fixed lookback window is applied.
       AND m.created_at <= v_raw_max_created_at;     -- Keep this run internally consistent.
   END IF;
 
@@ -471,13 +471,18 @@ main: BEGIN                                        -- Open a named procedure blo
 
   CLOSE cur_myair_users;
 
-  IF NOT v_is_full THEN                            -- Finish the one incremental transaction.
-    COMMIT;
-  END IF;
-
   SELECT COUNT(*)
   INTO v_total_rows                                -- Count the complete final tidy table.
   FROM myair_tidy;
+
+  IF v_total_rows = 0 THEN                       -- Reject empty output in either refresh mode.
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'myair refresh produced no tidy rows';
+  END IF;
+
+  IF NOT v_is_full THEN                          -- Commit only after checking the final output.
+    COMMIT;
+  END IF;
 
   SET v_finished_at = UTC_TIMESTAMP(6);            -- Record successful completion time.
   SET SESSION time_zone = v_old_time_zone;         -- Restore the caller's original timezone.

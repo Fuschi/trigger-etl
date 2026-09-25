@@ -123,7 +123,7 @@ procedure automatically selects an incremental refresh.
 The procedure:
 
 1. reads `MAX(created_at)` from `gps_tidy`;
-2. finds every raw row whose `created_at` is greater than that value;
+2. finds every raw row whose `created_at` is greater than or equal to that value;
 3. collects the event dates touched by those rows;
 4. deletes tidy rows for those dates;
 5. rebuilds the complete affected dates from raw GPS.
@@ -134,9 +134,9 @@ minute when it introduces a conflict.
 
 ## Limitations
 
-- The incremental comparison assumes that every raw row sharing the current
-  maximum `created_at` is already present. A row inserted later with exactly
-  the same timestamp would not satisfy the strict `>` comparison.
+- The inclusive `>=` comparison reprocesses keys at the current watermark,
+  including rows uploaded later with that same timestamp. This also repeats
+  some work when no new uploads arrive.
 - If the newest raw rows are all excluded by tidy rules, the tidy maximum does
   not advance and those raw rows are reconsidered on the next run. This repeats
   work but does not silently accept them.

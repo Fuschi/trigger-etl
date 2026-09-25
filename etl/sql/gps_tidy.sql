@@ -95,7 +95,7 @@ main: BEGIN
     SELECT DISTINCT DATE(g.event_ts)
     FROM gps AS g
     WHERE g.event_ts IS NOT NULL
-      AND g.created_at > v_previous_created_at
+      AND g.created_at >= v_previous_created_at
       AND g.created_at <= v_raw_max_created_at;
   END IF;
 
@@ -278,6 +278,11 @@ main: BEGIN
   SELECT COUNT(*)
   INTO v_total_rows
   FROM gps_tidy;
+
+  IF v_total_rows = 0 THEN                       -- Reject empty output in either refresh mode.
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'gps refresh produced no tidy rows';
+  END IF;
 
   COMMIT;
 

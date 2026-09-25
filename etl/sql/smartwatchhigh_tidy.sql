@@ -15,8 +15,8 @@
 --   CALL etl_smartwatchhigh_tidy();
 --
 -- An empty smartwatchhigh_tidy triggers a full build, committed one participant
--- at a time. Otherwise the procedure finds raw rows whose created_at is greater
--- than MAX(smartwatchhigh_tidy.created_at) and rebuilds their complete
+-- at a time. Otherwise the procedure finds raw rows whose created_at is greater than or equal
+-- to MAX(smartwatchhigh_tidy.created_at) and rebuilds their complete
 -- participant-minutes in one incremental transaction.
 -- ============================================================================
 
@@ -158,7 +158,7 @@ main: BEGIN                                        -- Open a named procedure blo
     WHERE s.firmware IS NOT NULL                  -- Required by the exact-event key.
       AND TRIM(s.firmware) <> ''                  -- Exclude missing firmware uploads.
       AND s.event_ts IS NOT NULL                  -- Required to construct the participant-minute.
-      AND s.created_at > v_previous_created_at    -- Select only uploads not yet represented.
+      AND s.created_at >= v_previous_created_at    -- Include uploads at the watermark.
       AND s.created_at <= v_raw_max_created_at;   -- Keep the run inside its frozen cutoff.
   END IF;
 
@@ -426,17 +426,17 @@ main: BEGIN                                        -- Open a named procedure blo
 
   CLOSE cur_smartwatchhigh_users;
 
-  IF NOT v_is_full THEN                           -- Finish the one incremental transaction.
-    COMMIT;
-  END IF;
-
   SELECT COUNT(*)
   INTO v_total_rows                               -- Count the complete final tidy table.
   FROM smartwatchhigh_tidy;
 
-  IF v_is_full AND v_total_rows = 0 THEN          -- Never report an empty full build as successful.
+  IF v_total_rows = 0 THEN                       -- Reject empty output in either refresh mode.
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'smartwatchhigh full build produced no tidy rows';
+      SET MESSAGE_TEXT = 'smartwatchhigh refresh produced no tidy rows';
+  END IF;
+
+  IF NOT v_is_full THEN                          -- Commit only after checking the final output.
+    COMMIT;
   END IF;
 
   SET v_finished_at = UTC_TIMESTAMP(6);           -- Record successful completion time.

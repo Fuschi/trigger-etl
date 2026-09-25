@@ -15,7 +15,7 @@
 --   CALL etl_sleep_tidy();
 --
 -- An empty sleep_tidy triggers a full build. Otherwise the procedure finds raw
--- uploads whose created_at is greater than MAX(sleep_tidy.created_at) and
+-- uploads whose created_at is greater than or equal to MAX(sleep_tidy.created_at) and
 -- rebuilds their complete participant/reference-date keys.
 -- ============================================================================
 
@@ -240,7 +240,7 @@ main: BEGIN                                        -- Open a named procedure blo
       s.userId,
       s.reference_date
     FROM tmp_sleep_source AS s
-    WHERE s.created_at > v_previous_created_at;    -- Strictly newer than the current tidy watermark.
+    WHERE s.created_at >= v_previous_created_at;    -- Include uploads at the current tidy watermark.
 
     SELECT COUNT(*)
     INTO v_source_rows                             -- Count full raw history for affected keys.
@@ -405,9 +405,9 @@ main: BEGIN                                        -- Open a named procedure blo
   INTO v_total_rows                               -- Validate the result before committing it.
   FROM sleep_tidy;
 
-  IF v_is_full AND v_total_rows = 0 THEN          -- Never report an empty full build as successful.
+  IF v_total_rows = 0 THEN                       -- Reject empty output in either refresh mode.
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'sleep full build produced no tidy rows';
+      SET MESSAGE_TEXT = 'sleep refresh produced no tidy rows';
   END IF;
 
   COMMIT;                                         -- Make the complete successful replacement durable.
