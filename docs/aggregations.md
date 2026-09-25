@@ -1,86 +1,63 @@
-# Aggregate data specification
+# Aggregations
 
-This document describes the shared five-minute, hourly and daily layers for
-GPS, MyAir, SmartwatchLow and SmartwatchHigh. Cleaning, deduplication and raw
-data distributions remain in the stream-specific tidy specifications.
-
-## Flow and keys
+GPS, MyAir, SmartwatchLow and SmartwatchHigh follow this chain:
 
 ```text
 <stream>_tidy → <stream>_5min → <stream>_hourly → <stream>_daily
 ```
 
-| Layer | Source | Grain and primary key |
-|---|---|---|
-| Five-minute | Corresponding tidy table | `(userId, bucket_5min)` |
-| Hourly | Corresponding five-minute table | `(userId, hour_ts)` |
-| Daily | Corresponding hourly table | `(userId, date)` |
+| Layer | Primary key | Source | Mean weighting |
+|---|---|---|---|
+| Five-minute | `(userId, bucket_5min)` | Tidy | Equal available minutes |
+| Hourly | `(userId, hour_ts)` | Five-minute | Equal available bucket means |
+| Daily | `(userId, date)` | Hourly | Equal available hourly means |
 
-All boundaries are UTC. Sleep is excluded because its raw source is already a
-nightly summary and ends at `sleep_tidy`.
+All boundaries are UTC. Five minutes is the shared analytical interval;
+joining sensor tables on `(userId, bucket_5min)` cannot multiply matching rows.
+Sleep ends at tidy. Refresh and transaction rules are in [architecture](architecture.md).
 
-Five minutes are the shared interval chosen for the four sensor streams: they
-are the minimum common interval across the devices. This is a project
-convention, not a claim that five minutes are statistically optimal.
+## Statistics
 
-## Temporal aggregation
+Continuous measurements retain mean, minimum, maximum and availability counts.
+Means ignore `NULL`; extrema propagate lower-layer minima/maxima. There are no
+additional cleaning rules or minimum-coverage filters.
 
-The hierarchy uses equal temporal-unit weighting:
+A bucket with one minute and a bucket with five minutes have equal hourly
+weight. An hour with one bucket and an hour with twelve have equal daily weight.
+For example, hourly means 10 and 30 produce a daily mean of 20 regardless of
+their coverage. This is a project convention, not a completeness adjustment.
 
-```text
-tidy → five-minute: mean of available participant-minutes
-five-minute → hour: mean of available five-minute means
-hour → day: mean of available hourly means
-```
+| Stream | Specific behavior |
+|---|---|
+| GPS | Arithmetic coordinate and accuracy statistics; not distance or trajectory estimates. Accuracy includes zero/negative raw values. |
+| MyAir | All 15 measurements summarized independently. |
+| SmartwatchLow | Step/cal remain means, never totals; pressure counts stay paired. Temperature-labelled values retain their raw scale. |
+| SmartwatchHigh | Heart rate, oxygen and breathing rate use continuous statistics. `sleeprate_0_n`…`sleeprate_4_n` count observed minutes by code; no categorical mean. |
 
-A five-minute bucket formed from one observed minute therefore has the same
-weight in an hourly mean as one formed from five observed minutes. Likewise,
-an hour formed from one bucket has the same weight in a daily mean as one
-formed from twelve buckets. This is an explicit simplification. Coverage
-columns retain the number of contributing minutes, buckets and hours so that
-analyses can evaluate or replace this weighting.
-
-At every aggregate level, each continuous measurement always retains its mean,
-minimum and maximum, together with its availability count. Means ignore
-`NULL`; hourly and daily minima and maxima propagate the extrema observed in
-the lower layer. No minimum coverage threshold is applied.
+Units and retained fields: [tidy cleaning](tidy-cleaning.md#measurements).
 
 ## Coverage
 
-The general coverage columns are:
+| Layer | General counts | Per-measurement counts (`x`) |
+|---|---|---|
+| Five-minute | `observed_minute_n`: 1…5 | `x_n`: non-null minutes |
+| Hourly | `observed_5min_n`: 1…12; `observed_minute_n`: up to 60 | `x_5min_n`, `x_minute_n` |
+| Daily | `hours_n`: 1…24; `five_min_n`: up to 288; `minute_n`: up to 1440 | `x_hours_n`, `x_5min_n`, `x_minute_n` |
 
-| Layer | Coverage |
-|---|---|
-| Five-minute | `observed_minute_n`, between 1 and 5 |
-| Hourly | `observed_5min_n`, between 1 and 12, plus `observed_minute_n` |
-| Daily | `hours_n`, `five_min_n` and `minute_n` |
+Counts describe observed time units, not raw upload density or measurement
+quality. GPS coordinate and accuracy counts equal general coverage.
+Daily `complete_hours_n` counts hours with 12 observed buckets, not necessarily
+60 observed minutes; `x_complete_hours_n` applies the same rule to measurement x.
 
-Measurement-specific counts distinguish general stream presence from actual
-availability of one variable. At five minutes they count valid minutes; at the
-hourly and daily levels they retain contributing buckets and underlying time
-units.
-
-Daily `five_min_profile` and measurement-specific `*_5min_profile` columns are
-JSON arrays of exactly 24 integers ordered from UTC hour 00 through 23. Each
-entry is a five-minute coverage count from 0 through 12, not a measurement
-value.
+Daily `five_min_profile` and `x_5min_profile` are JSON arrays of 24 bucket counts
+ordered 00…23 UTC. Entries range 0…12; missing hours are zero. Days without any
+observations have no output row.
 
 ## Provenance
 
-`deviceId` and `firmware` are provenance, not aggregation keys. Each layer
-retains their distinct or ambiguity counts. A scalar identifier is populated
-only when the complete period is unambiguous; otherwise it is `NULL`. The ETL
-does not guess identifiers hidden by an already mixed lower-level period.
-
-## Stream-specific rules
-
-| Stream | Aggregated values | Specific policy |
-|---|---|---|
-| GPS | Longitude, latitude and accuracy | Mean, minimum and maximum are retained. Coordinates are descriptive positions, not distance or trajectory estimates. Accuracy is optional and has separate availability counts. |
-| MyAir | 15 environmental measurements retained by tidy | Mean, minimum and maximum are retained independently for every measurement. No exposure category, Humidex or scientific threshold is added. |
-| SmartwatchLow | Step, calories, pressure pair and temperature-labelled fields | Mean, minimum and maximum are retained. Step and calories are averaged, never summed, because raw values are normally repeated within five-minute intervals and their counter semantics are unresolved. Pressure availability remains paired. Temperature-labelled fields retain their unresolved raw scale. |
-| SmartwatchHigh | Heart rate, oxygen saturation, breathing rate and sleep-state codes | Mean, minimum and maximum are retained for the first three continuous measurements. `sleeprate` is categorical: codes 0 through 4 are counted separately and are never averaged or assigned stage names. Firmware-dependent absence remains missing data, not physiology. |
-
-The aggregate layers do not add cleaning rules. Every tidy row contributes to
-its participant-time bucket, while each measurement contributes only when its
-tidy value is non-null.
+At five minutes, `device_n` and `firmware_n` count distinct identifiers.
+Hourly `mixed_*_5min_n` counts mixed buckets. Daily `ambiguous_*_hour_n` counts
+hours without a unique identifier; mixed-bucket counts are also retained.
+Scalar `deviceId`/`firmware` is populated only when the whole period is
+unambiguous. Counts of mixed periods are not distinct-device counts.
+`source_created_at_max` is the greatest represented ingestion time, not run time.

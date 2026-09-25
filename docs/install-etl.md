@@ -1,17 +1,16 @@
-# Install and run the ETL
+# Install and run
 
-The commands below load every table definition and stored procedure in
-dependency order. They use the local MariaDB client configuration: no password
-or database environment name is stored in the repository.
+Requires MariaDB 10.11, the `mariadb` client, Bash and `flock`.
+Configure credentials locally; do not pass passwords on the command line.
+Check [permissions](database-permissions.md) and confirm the database/account
+before installation or execution.
 
-Loading a SQL file replaces its procedure and creates its table when the table
-does not already exist. It does **not** execute the ETL and does not modify raw
-tables.
+## Install definitions
 
-## Load all definitions
-
-Copy the complete block, then enter the repository directory and target
-database name when prompted.
+Loading SQL creates absent tables and replaces procedures; it does not run the
+ETL. `CREATE TABLE IF NOT EXISTS` does not migrate incompatible tables: any
+schema replacement requires a separate, explicitly confirmed operation on the
+named managed table. Never drop raw or mapping tables.
 
 ```bash
 read -erp "ETL repository directory: " ETL_REPOSITORY
@@ -47,58 +46,31 @@ WHERE Db = DATABASE()
 MARIADB
 ```
 
-## Run the complete pipeline
+## Run
 
-Run this only after the definitions have loaded successfully. The order is
-important: tidy tables are refreshed first, followed by five-minute, hourly
-and daily tables. Sleep stops at its natural participant-night tidy layer.
+From the repository root, after installation succeeds:
 
 ```bash
-read -rp "MariaDB database name: " ETL_DATABASE
-
-mariadb "$ETL_DATABASE" <<'MARIADB'
-CALL etl_gps_tidy();
-CALL etl_myair_tidy();
-CALL etl_smartwatchlow_tidy();
-CALL etl_smartwatchhigh_tidy();
-CALL etl_sleep_tidy();
-
-CALL etl_gps_5min();
-CALL etl_myair_5min();
-CALL etl_smartwatchlow_5min();
-CALL etl_smartwatchhigh_5min();
-
-CALL etl_gps_hourly();
-CALL etl_myair_hourly();
-CALL etl_smartwatchlow_hourly();
-CALL etl_smartwatchhigh_hourly();
-
-CALL etl_gps_daily();
-CALL etl_myair_daily();
-CALL etl_smartwatchlow_daily();
-CALL etl_smartwatchhigh_daily();
-MARIADB
+ETL_DATABASE=your_database ./etl/run_etl.sh
 ```
 
-Each call prints its own row-count and timing summary. Stop and investigate if
-MariaDB reports an error; later layers must not be run from a failed or stale
-upstream layer.
+| Option | Behavior |
+|---|---|
+| `ETL_DATABASE` or first argument | Target database; use only one form |
+| `ETL_DEFAULTS_FILE` | Optional absolute path to an extra MariaDB client configuration |
+| `ETL_LOCK_FILE` | Optional lock path; default `/tmp/trigger-etl-${UID}.lock` |
 
-After the definitions, target schemas and privileges have been verified, the
-same calls can be run non-interactively by the nightly executable:
+The runner executes tidy → five-minute → hourly → daily, stops on the first
+error, and writes progress and procedure counts to stdout/stderr. The file lock
+prevents overlapping runs sharing that lock; calls from other hosts or direct
+SQL sessions must be coordinated separately. Lock contention exits with code 75.
 
-```bash
-ETL_DATABASE=<database> ./etl/run_etl.sh
-```
+For scheduling, adapt [crontab.example](../etl/crontab.example) and install it
+with `crontab -e`. Its 02:00 schedule uses the server timezone.
 
-The executable stops at the first error and prevents overlapping runs. It
-writes progress to standard output and standard error so the scheduler can
-capture or mail the result.
+## Failure and recovery
 
-## Existing incompatible tables
-
-`CREATE TABLE IF NOT EXISTS` deliberately does not change an existing schema.
-Therefore, loading the definitions is enough for absent or already compatible
-tables, but it does not migrate an incompatible existing table. Such a managed
-table must be deliberately removed and recreated before its procedure is
-called. Do not drop raw source tables.
+Investigate errors before running downstream layers. Transactional failures
+preserve prior output; interrupted batched full builds may leave partial tidy
+data that must be emptied before retrying. Confirm the exact target before any
+cleanup. See [architecture](architecture.md#transactions-and-diagnostics).
