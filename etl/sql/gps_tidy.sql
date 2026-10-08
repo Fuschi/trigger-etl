@@ -1,6 +1,7 @@
+-- Use recordedUserId; fall back to a unique device mapping.
 -- One paired GPS position per participant-minute.
 -- Accuracy is copied unchanged: zero and negative values are retained; raw accuracy is NOT NULL.
--- Existing coordinate, provenance and ambiguity rules are unchanged.
+-- Reject ambiguous participant-minutes.
 -- Empty output: full build. Otherwise: rebuild participant-minutes touched by
 -- newly ingested rows.
 
@@ -103,15 +104,17 @@ main: BEGIN
   IF NOT v_is_full THEN
     INSERT INTO tmp_gps_minutes (userId, minute_ts)
     SELECT DISTINCT
-      dm.userId,
+      COALESCE(g.recordedUserId, dm.userId) AS userId,
       TIMESTAMP(
         DATE(g.event_ts),
         MAKETIME(HOUR(g.event_ts), MINUTE(g.event_ts), 0)
       )
-    FROM tmp_gps_device_map AS dm
-    INNER JOIN gps AS g
-      ON g.deviceId = dm.deviceId
-    WHERE g.firmware IS NOT NULL
+    FROM gps AS g
+    LEFT JOIN tmp_gps_device_map AS dm
+      ON g.deviceId = dm.deviceId AND g.recordedUserId IS NULL
+    WHERE COALESCE(g.recordedUserId, dm.userId) IS NOT NULL
+      AND g.deviceId IS NOT NULL AND TRIM(g.deviceId) <> ''
+      AND g.firmware IS NOT NULL
       AND TRIM(g.firmware) <> ''
       AND g.event_ts IS NOT NULL
       AND g.created_at >= v_previous_created_at
@@ -144,9 +147,9 @@ main: BEGIN
   INTO v_source_rows
   FROM gps AS g
   LEFT JOIN tmp_gps_device_map AS dm
-    ON dm.deviceId = g.deviceId
+    ON dm.deviceId = g.deviceId AND g.recordedUserId IS NULL
   LEFT JOIN tmp_gps_minutes AS scope
-    ON scope.userId = dm.userId
+    ON scope.userId = COALESCE(g.recordedUserId, dm.userId)
    AND scope.minute_ts = TIMESTAMP(
      DATE(g.event_ts),
      MAKETIME(HOUR(g.event_ts), MINUTE(g.event_ts), 0)
@@ -182,7 +185,7 @@ main: BEGIN
   WITH
   required_rows AS (
     SELECT
-      dm.userId,
+      COALESCE(g.recordedUserId, dm.userId) AS userId,
       g.deviceId,
       g.firmware,
       g.event_ts,
@@ -195,18 +198,20 @@ main: BEGIN
       g.latitude,
       g.accuracy,
       MIN(g.created_at) OVER (
-        PARTITION BY g.deviceId, g.firmware, g.event_ts
+        PARTITION BY COALESCE(g.recordedUserId, dm.userId), g.deviceId, g.firmware, g.event_ts
       ) AS first_created_at
-    FROM tmp_gps_device_map AS dm
-    INNER JOIN gps AS g
-      ON g.deviceId = dm.deviceId
+    FROM gps AS g
+    LEFT JOIN tmp_gps_device_map AS dm
+      ON g.deviceId = dm.deviceId AND g.recordedUserId IS NULL
     LEFT JOIN tmp_gps_minutes AS scope
-      ON scope.userId = dm.userId
+      ON scope.userId = COALESCE(g.recordedUserId, dm.userId)
      AND scope.minute_ts = TIMESTAMP(
        DATE(g.event_ts),
        MAKETIME(HOUR(g.event_ts), MINUTE(g.event_ts), 0)
      )
-    WHERE (v_is_full OR scope.userId IS NOT NULL)
+    WHERE COALESCE(g.recordedUserId, dm.userId) IS NOT NULL
+      AND g.deviceId IS NOT NULL AND TRIM(g.deviceId) <> ''
+      AND (v_is_full OR scope.userId IS NOT NULL)
       AND g.firmware IS NOT NULL
       AND TRIM(g.firmware) <> ''
       AND g.event_ts IS NOT NULL
@@ -243,7 +248,7 @@ main: BEGIN
     SELECT
       p.*,
       COUNT(*) OVER (
-        PARTITION BY p.deviceId, p.firmware, p.event_ts
+        PARTITION BY p.userId, p.deviceId, p.firmware, p.event_ts
       ) AS payload_n
     FROM earliest_payloads AS p
   ),
@@ -252,7 +257,7 @@ main: BEGIN
     SELECT
       e.*,
       COUNT(*) OVER (
-        PARTITION BY e.deviceId, e.firmware, e.minute_ts
+        PARTITION BY e.userId, e.deviceId, e.firmware, e.minute_ts
       ) AS event_n
     FROM event_checked AS e
     WHERE e.payload_n = 1

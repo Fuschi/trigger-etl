@@ -29,9 +29,9 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_5min (   -- Preserve a compatible exist
   bplow_mean DOUBLE NULL, bplow_min DOUBLE NULL, bplow_max DOUBLE NULL,
   bplow_n TINYINT UNSIGNED NOT NULL,              -- Lower member of the pressure pair, presumed mmHg.
   bodytemp_mean DOUBLE NULL, bodytemp_min DOUBLE NULL, bodytemp_max DOUBLE NULL,
-  bodytemp_n TINYINT UNSIGNED NOT NULL,           -- Minutes with a recorded raw bodytemp value.
+  bodytemp_n TINYINT UNSIGNED NOT NULL,           -- Valid body-temperature minutes.
   skintemp_mean DOUBLE NULL, skintemp_min DOUBLE NULL, skintemp_max DOUBLE NULL,
-  skintemp_n TINYINT UNSIGNED NOT NULL,           -- Minutes with a recorded raw skintemp value.
+  skintemp_n TINYINT UNSIGNED NOT NULL,           -- Valid skin-temperature minutes.
 
   PRIMARY KEY (userId, bucket_5min),              -- Enforce one participant/bucket row.
   INDEX idx_smartwatchlow_5min_bucket (bucket_5min),

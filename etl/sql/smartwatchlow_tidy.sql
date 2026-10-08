@@ -1,3 +1,4 @@
+-- Use recordedUserId; fall back to a unique device mapping.
 -- ============================================================================
 -- smartwatchlow_tidy.sql
 --
@@ -34,8 +35,8 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_tidy (   -- Preserve a compatible exist
   cal      INT NULL,                               -- Non-negative recorded integer; unit unresolved.
   bphigh   INT NULL,                               -- Greater positive blood-pressure value in mmHg.
   bplow    INT NULL,                               -- Lower positive blood-pressure value in mmHg.
-  bodytemp DOUBLE NULL,                            -- Raw recorded value; meaning and unit unresolved.
-  skintemp DOUBLE NULL,                            -- Raw recorded value; meaning and unit unresolved.
+  bodytemp DOUBLE NULL,                            -- Body temperature; raw skintemp.
+  skintemp DOUBLE NULL,                            -- Skin temperature; raw bodytemp.
 
   PRIMARY KEY (userId, minute_ts),                 -- Enforce one row per participant-minute.
   INDEX idx_smartwatchlow_tidy_user_bucket (userId, bucket_5min), -- Participant time series.
@@ -150,15 +151,17 @@ main: BEGIN                                        -- Open a named procedure blo
   IF NOT v_is_full THEN                             -- A full build reads every visible raw minute.
     INSERT INTO tmp_smartwatchlow_minutes (userId, minute_ts)
     SELECT DISTINCT
-      dm.userId,
+      COALESCE(s.recordedUserId, dm.userId) AS userId,
       TIMESTAMP(
         DATE(s.event_ts),
         MAKETIME(HOUR(s.event_ts), MINUTE(s.event_ts), 0)
       ) AS minute_ts
-    FROM tmp_smartwatchlow_device_map AS dm
-    INNER JOIN smartwatchlow AS s
-      ON s.deviceId = dm.deviceId                  -- Use the device-led raw lookup when available.
-    WHERE s.firmware IS NOT NULL                   -- Required by the exact-event key.
+    FROM smartwatchlow AS s
+    LEFT JOIN tmp_smartwatchlow_device_map AS dm
+      ON s.deviceId = dm.deviceId AND s.recordedUserId IS NULL
+    WHERE COALESCE(s.recordedUserId, dm.userId) IS NOT NULL
+      AND s.deviceId IS NOT NULL AND TRIM(s.deviceId) <> ''
+      AND s.firmware IS NOT NULL                   -- Required by the exact-event key.
       AND TRIM(s.firmware) <> ''                   -- Exclude missing firmware uploads.
       AND s.event_ts IS NOT NULL                   -- Required to construct the participant-minute.
       AND s.created_at >= v_previous_created_at     -- Include uploads at the watermark.
@@ -193,11 +196,11 @@ main: BEGIN                                        -- Open a named procedure blo
 
     SELECT COUNT(*)
     INTO v_source_rows                              -- Count raw rows used to rebuild affected minutes.
-    FROM tmp_smartwatchlow_device_map AS dm
-    INNER JOIN smartwatchlow AS s
-      ON s.deviceId = dm.deviceId
+    FROM smartwatchlow AS s
+    LEFT JOIN tmp_smartwatchlow_device_map AS dm
+      ON s.deviceId = dm.deviceId AND s.recordedUserId IS NULL
     INNER JOIN tmp_smartwatchlow_minutes AS m
-      ON m.userId = dm.userId
+      ON m.userId = COALESCE(s.recordedUserId, dm.userId)
      AND m.minute_ts = TIMESTAMP(
        DATE(s.event_ts),
        MAKETIME(HOUR(s.event_ts), MINUTE(s.event_ts), 0)
@@ -218,8 +221,12 @@ main: BEGIN                                        -- Open a named procedure blo
 
   IF v_is_full THEN                                 -- Full mode processes every resolved participant.
     INSERT INTO tmp_smartwatchlow_run_users (userId)
-    SELECT DISTINCT dm.userId
-    FROM tmp_smartwatchlow_device_map AS dm;
+    SELECT DISTINCT COALESCE(s.recordedUserId, dm.userId)
+    FROM smartwatchlow AS s
+    LEFT JOIN tmp_smartwatchlow_device_map AS dm
+      ON dm.deviceId = s.deviceId AND s.recordedUserId IS NULL
+    WHERE COALESCE(s.recordedUserId, dm.userId) IS NOT NULL
+      AND s.created_at <= v_raw_max_created_at;
   ELSE                                              -- Incremental mode processes affected users only.
     INSERT INTO tmp_smartwatchlow_run_users (userId)
     SELECT DISTINCT m.userId
@@ -269,7 +276,7 @@ main: BEGIN                                        -- Open a named procedure blo
     WITH
     required_rows AS (                             -- Step 1: select valid technical fields.
       SELECT
-        dm.userId,
+        COALESCE(s.recordedUserId, dm.userId) AS userId,
         s.deviceId,
         s.firmware,
         s.event_ts,
@@ -285,18 +292,20 @@ main: BEGIN                                        -- Open a named procedure blo
         s.bodytemp,
         s.skintemp,
         MIN(s.created_at) OVER (
-          PARTITION BY s.deviceId, s.firmware, s.event_ts
+          PARTITION BY COALESCE(s.recordedUserId, dm.userId), s.deviceId, s.firmware, s.event_ts
         ) AS first_created_at                       -- Earliest upload of the exact device event.
-      FROM tmp_smartwatchlow_device_map AS dm
-      INNER JOIN smartwatchlow AS s
-        ON s.deviceId = dm.deviceId                -- Read the current participant's devices.
+      FROM smartwatchlow AS s
+      LEFT JOIN tmp_smartwatchlow_device_map AS dm
+        ON s.deviceId = dm.deviceId AND s.recordedUserId IS NULL
       LEFT JOIN tmp_smartwatchlow_minutes AS scope
-        ON scope.userId = dm.userId
+        ON scope.userId = COALESCE(s.recordedUserId, dm.userId)
        AND scope.minute_ts = TIMESTAMP(
          DATE(s.event_ts),
          MAKETIME(HOUR(s.event_ts), MINUTE(s.event_ts), 0)
        )
-      WHERE dm.userId = v_user_id                  -- Keep this statement participant-sized.
+      WHERE COALESCE(s.recordedUserId, dm.userId) = v_user_id
+        AND s.deviceId IS NOT NULL
+        AND TRIM(s.deviceId) <> ''
         AND (v_is_full OR scope.userId IS NOT NULL) -- Full history or affected incremental keys.
         AND s.firmware IS NOT NULL                 -- Required by the exact-event key.
         AND TRIM(s.firmware) <> ''                 -- Reject blank firmware values.
@@ -340,7 +349,7 @@ main: BEGIN                                        -- Open a named procedure blo
       SELECT
         p.*,
         COUNT(*) OVER (
-          PARTITION BY p.deviceId, p.firmware, p.event_ts
+          PARTITION BY p.userId, p.deviceId, p.firmware, p.event_ts
         ) AS payload_n                             -- More than one means measurements disagree.
       FROM earliest_payloads AS p
     ),
@@ -349,7 +358,7 @@ main: BEGIN                                        -- Open a named procedure blo
       SELECT
         e.*,
         COUNT(*) OVER (
-          PARTITION BY e.deviceId, e.firmware, e.minute_ts
+          PARTITION BY e.userId, e.deviceId, e.firmware, e.minute_ts
         ) AS event_n                               -- More than one makes the device-minute ambiguous.
       FROM event_checked AS e
       WHERE e.payload_n = 1                        -- Remove conflicting exact events first.
@@ -375,8 +384,8 @@ main: BEGIN                                        -- Open a named procedure blo
           THEN LEAST(bphigh, bplow)
           ELSE NULL
         END AS bplow,
-        bodytemp,                                  -- Preserve the unresolved raw sensor scale.
-        skintemp                                   -- Preserve the unresolved raw sensor scale.
+        NULLIF(skintemp, 0) AS bodytemp,             -- Swap labels; zero is missing.
+        NULLIF(bodytemp, 0) AS skintemp              -- Swap labels; zero is missing.
       FROM device_minute_checked
       WHERE event_n = 1                            -- Keep one unambiguous event per device-minute.
     ),

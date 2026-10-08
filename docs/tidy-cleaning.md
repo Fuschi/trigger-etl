@@ -15,7 +15,9 @@ floor them to multiples of five. UTC is the project convention.
 Raw calendar components are omitted; Sleep derives `date` from them and drops
 unreliable clock components. Retained measurements are listed below.
 
-Each stream reads its raw table and `user_<stream>(deviceId, userId)` mapping.
+Each raw table requires nullable `recordedUserId`. Tidy uses it when present;
+otherwise it uses a unique `user_<stream>(deviceId, userId)` mapping.
+Output `userId` is the resolved participant.
 Sensor sources require `event_ts` as `DATETIME` and `created_at` as `TIMESTAMP`;
 Sleep constructs a valid date from `year`, `month`, `day`.
 `deviceId` and `firmware` are provenance, not participant-level keys.
@@ -25,18 +27,16 @@ Sleep constructs a valid date from `year`, `month`, `day`.
 | Rule | Selection or exclusion |
 |---|---|
 | Required fields | Reject missing/blank device or firmware, missing event time or ingestion time. |
-| Exact event | Key: `(deviceId, firmware, event_ts)`. Select earliest `created_at`; ignore later uploads. |
+| Exact event | Key: `(userId, deviceId, firmware, event_ts)`. Select earliest `created_at`; ignore later uploads. |
 | Equal copies | Collapse identical retained payloads at that earliest time. |
 | Conflicting copies | Reject the event if earliest payloads disagree, before value cleaning. |
-| Device-minute ambiguity | Reject multiple remaining events for `(deviceId, firmware, minute_ts)`. |
+| Device-minute ambiguity | Reject multiple remaining events for `(userId, deviceId, firmware, minute_ts)`. |
 | Measurement cleaning | Apply the rules below; reject rows with no usable measurement. GPS requires valid paired coordinates. |
-| Participant binding | Keep devices mapped to exactly one distinct non-null `userId`; reject unmapped or ambiguous devices. No reassignment dates are inferred. |
+| Participant binding | Use `recordedUserId`; for NULL IDs require a unique legacy mapping. |
 | Participant-minute ambiguity | Reject minutes containing multiple remaining usable device/firmware candidates. |
 
-All four sensor streams resolve mappings before event deduplication and assess
-participant ambiguity after
-removing unusable rows. Ambiguous bindings exclude complete device histories
-when those histories are rebuilt; see [incremental limits](architecture.md#tidy-refresh).
+Participant attribution precedes deduplication. Ambiguous legacy mappings
+exclude only rows with NULL `recordedUserId`; see [refresh limits](architecture.md#tidy-refresh).
 
 ## Measurements
 
@@ -58,14 +58,21 @@ measure presence, not position quality.
 
 | Fields | Retained values | Unit / rationale |
 |---|---|---|
-| `pm1`, `pm25`, `pm10` | 0…65534 | µg/m³; excludes observed sentinel 65535 |
-| `pc03`, `pc05`, `pc1`, `pc25`, `pc5`, `pc10` | 0…65534 | Historical count/dL; excludes 65535 |
+| `pm1`, `pm25`, `pm10` | 0…500 inclusive | µg/m³; confirmed device range |
+| `pc03`, `pc05`, `pc1`, `pc25`, `pc5`, `pc10` | All three PM must be valid; retain PC 0…65534 | Historical count/dL; excludes technical sentinel 65535 |
 | `temperature` | Unchanged | Recorded scale; unit/range unresolved |
 | `humidity` | 0…100 | Relative humidity, % |
 | `pressure` | 300…1100 | hPa; observed violations were 65535 |
-| `sound` | 0…200 | Recorded scale; separates observed outlier 1792 from other values ≤110 |
-| `uvb` | 0…6552 | Recorded scale; excludes observed code 6553 |
-| `light` | ≥0 | Recorded scale; observed saturation plateau 18905 is retained |
+| `sound` | Raw 0…1400 inclusive, then divide by 10 | dB; provisional ceiling 140 |
+| `uvb` | Raw 0…6552, then divide by 100 | UV index; excludes raw sentinel 6553 |
+| `light` | ≥0, unchanged | Lux; observed saturation plateau 18905 is retained |
+
+Arun's emails (24–29 September 2026) confirm PM bounds and sound/UV scales.
+If any PM is invalid or missing, all PC values become NULL. Valid PM values
+remain independent; existing PC bounds exclude sentinel 65535.
+The 140 dB sound ceiling is provisional and excludes raw 1792 (179.2 dB).
+Calibration formulas were not supplied; no temperature/humidity or
+angle-dependent light/UV correction is applied.
 
 [SQL](../etl/sql/myair_tidy.sql).
 
@@ -75,7 +82,11 @@ measure presence, not position quality.
 |---|---|---|
 | `step`, `cal` | Retain ≥0; no upper cutoff | Reported activity values; calorie unit unresolved |
 | `bphigh`, `bplow` | Both must be positive; store greater then lower value, otherwise both `NULL` | Presumed mmHg; corrects firmware-specific reversal |
-| `bodytemp`, `skintemp` | Unchanged, including zero | Raw scale; meaning and units unresolved |
+| `bodytemp` | Raw `skintemp`; zero becomes `NULL` | Body temperature; unit/range unresolved |
+| `skintemp` | Raw `bodytemp`; zero becomes `NULL` | Skin temperature; unit/range unresolved |
+
+Temperature labels are swapped and zeros become NULL (Arun, 29 September
+2026). Units and further validity bounds remain unconfirmed.
 
 Steps and calories repeat within five-minute periods. Their exact semantics
 remain unresolved; aggregations use means, never sums of minute copies.
@@ -98,7 +109,7 @@ This difference is measurement availability, not a physiological change.
 ### Sleep
 
 Require a valid calendar date, non-blank device/firmware, ingestion time and
-unambiguous participant binding. For `(deviceId, firmware, date)`, select the
+unambiguous participant binding. For `(userId, deviceId, firmware, date)`, select the
 **latest** upload, collapse equal copies and reject conflicting final payloads.
 After cleaning, reject participant-dates with multiple remaining candidates.
 

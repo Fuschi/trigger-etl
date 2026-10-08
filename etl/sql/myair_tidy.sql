@@ -1,3 +1,4 @@
+-- Use recordedUserId; fall back to a unique device mapping.
 -- ============================================================================
 -- myair_tidy.sql
 --
@@ -42,9 +43,9 @@ CREATE TABLE IF NOT EXISTS myair_tidy (            -- Preserve a compatible exis
   temperature DOUBLE NULL,                         -- Preserved as recorded; range and unit unresolved.
   humidity    DOUBLE NULL,                         -- Relative humidity in percent.
   pressure    DOUBLE NULL,                         -- Atmospheric pressure in hPa.
-  sound       DOUBLE NULL,                         -- Sound measurement on the recorded sensor scale.
-  uvb         DOUBLE NULL,                         -- UVB measurement on the recorded sensor scale.
-  light       DOUBLE NULL,                         -- Light measurement on the recorded sensor scale.
+  sound       DOUBLE NULL,                         -- dB; raw / 10.
+  uvb         DOUBLE NULL,                         -- UV index; raw / 100.
+  light       DOUBLE NULL,                         -- Lux.
 
   PRIMARY KEY (userId, minute_ts),                 -- Enforce one row per participant-minute.
   INDEX idx_myair_tidy_user_bucket (userId, bucket_5min), -- Support participant time-series queries.
@@ -53,9 +54,9 @@ CREATE TABLE IF NOT EXISTS myair_tidy (            -- Preserve a compatible exis
 
   CONSTRAINT chk_myair_tidy_pm
     CHECK (                                        -- Permit valid mass values or cleaned NULLs.
-      (pm1 IS NULL OR pm1 BETWEEN 0 AND 65534)
-      AND (pm25 IS NULL OR pm25 BETWEEN 0 AND 65534)
-      AND (pm10 IS NULL OR pm10 BETWEEN 0 AND 65534)
+      (pm1 IS NULL OR pm1 BETWEEN 0 AND 500)
+      AND (pm25 IS NULL OR pm25 BETWEEN 0 AND 500)
+      AND (pm10 IS NULL OR pm10 BETWEEN 0 AND 500)
     ),
   CONSTRAINT chk_myair_tidy_pc
     CHECK (                                        -- Permit valid count values or cleaned NULLs.
@@ -65,15 +66,22 @@ CREATE TABLE IF NOT EXISTS myair_tidy (            -- Preserve a compatible exis
       AND (pc25 IS NULL OR pc25 BETWEEN 0 AND 65534)
       AND (pc5 IS NULL OR pc5 BETWEEN 0 AND 65534)
       AND (pc10 IS NULL OR pc10 BETWEEN 0 AND 65534)
+      AND (
+        (pc03 IS NULL AND pc05 IS NULL AND pc1 IS NULL
+         AND pc25 IS NULL AND pc5 IS NULL AND pc10 IS NULL)
+        OR (pm1 IS NOT NULL AND pm1 BETWEEN 0 AND 500
+            AND pm25 IS NOT NULL AND pm25 BETWEEN 0 AND 500
+            AND pm10 IS NOT NULL AND pm10 BETWEEN 0 AND 500)
+      )
     ),
   CONSTRAINT chk_myair_tidy_humidity
     CHECK (humidity IS NULL OR humidity BETWEEN 0 AND 100), -- Enforce percent bounds.
   CONSTRAINT chk_myair_tidy_pressure
     CHECK (pressure IS NULL OR pressure BETWEEN 300 AND 1100), -- Keep the historical hPa range.
   CONSTRAINT chk_myair_tidy_sound
-    CHECK (sound IS NULL OR sound BETWEEN 0 AND 200), -- Keep the historical technical range.
+    CHECK (sound IS NULL OR sound BETWEEN 0 AND 140), -- Provisional 140 dB ceiling.
   CONSTRAINT chk_myair_tidy_uvb
-    CHECK (uvb IS NULL OR uvb BETWEEN 0 AND 6552),  -- Exclude the observed 6553 error code.
+    CHECK (uvb IS NULL OR uvb BETWEEN 0 AND 65.52), -- Exclude raw sentinel 6553.
   CONSTRAINT chk_myair_tidy_light
     CHECK (light IS NULL OR light >= 0)             -- Negative light readings are invalid.
 ) ENGINE = InnoDB;                                 -- InnoDB makes DELETE and INSERT transactional.
@@ -170,15 +178,17 @@ main: BEGIN                                        -- Open a named procedure blo
   IF NOT v_is_full THEN
     INSERT INTO tmp_myair_minutes (userId, minute_ts)
     SELECT DISTINCT
-      dm.userId,
+      COALESCE(m.recordedUserId, dm.userId) AS userId,
       TIMESTAMP(
         DATE(m.event_ts),
         MAKETIME(HOUR(m.event_ts), MINUTE(m.event_ts), 0)
       )
-    FROM tmp_myair_device_map AS dm
-    INNER JOIN myair AS m
-      ON m.deviceId = dm.deviceId
-    WHERE m.firmware IS NOT NULL
+    FROM myair AS m
+    LEFT JOIN tmp_myair_device_map AS dm
+      ON m.deviceId = dm.deviceId AND m.recordedUserId IS NULL
+    WHERE COALESCE(m.recordedUserId, dm.userId) IS NOT NULL
+      AND m.deviceId IS NOT NULL AND TRIM(m.deviceId) <> ''
+      AND m.firmware IS NOT NULL
       AND TRIM(m.firmware) <> ''
       AND m.event_ts IS NOT NULL
       AND m.created_at >= v_previous_created_at
@@ -211,9 +221,9 @@ main: BEGIN                                        -- Open a named procedure blo
   INTO v_source_rows                                -- Count raw rows in the selected scope.
   FROM myair AS m
   LEFT JOIN tmp_myair_device_map AS dm
-    ON dm.deviceId = m.deviceId
+    ON dm.deviceId = m.deviceId AND m.recordedUserId IS NULL
   LEFT JOIN tmp_myair_minutes AS scope
-    ON scope.userId = dm.userId
+    ON scope.userId = COALESCE(m.recordedUserId, dm.userId)
    AND scope.minute_ts = TIMESTAMP(
      DATE(m.event_ts),
      MAKETIME(HOUR(m.event_ts), MINUTE(m.event_ts), 0)
@@ -229,8 +239,12 @@ main: BEGIN                                        -- Open a named procedure blo
 
   IF v_is_full THEN                                 -- Full mode processes every resolved participant.
     INSERT INTO tmp_myair_run_users (userId)
-    SELECT DISTINCT dm.userId
-    FROM tmp_myair_device_map AS dm;
+    SELECT DISTINCT COALESCE(m.recordedUserId, dm.userId)
+    FROM myair AS m
+    LEFT JOIN tmp_myair_device_map AS dm
+      ON dm.deviceId = m.deviceId AND m.recordedUserId IS NULL
+    WHERE COALESCE(m.recordedUserId, dm.userId) IS NOT NULL
+      AND m.created_at <= v_raw_max_created_at;
   ELSE                                              -- Incremental mode needs affected users only.
     INSERT INTO tmp_myair_run_users (userId)
     SELECT DISTINCT m.userId
@@ -287,9 +301,9 @@ main: BEGIN                                        -- Open a named procedure blo
       light
     )
     WITH
-    required_rows AS (                             -- Step 1: select one participant's valid devices.
+    required_rows AS (                             -- Valid participant rows.
       SELECT
-        dm.userId,
+        COALESCE(m.recordedUserId, dm.userId) AS userId,
         m.deviceId,
         m.firmware,
         m.event_ts,
@@ -314,18 +328,20 @@ main: BEGIN                                        -- Open a named procedure blo
         m.uvb,
         m.light,
         MIN(m.created_at) OVER (
-          PARTITION BY m.deviceId, m.firmware, m.event_ts
+          PARTITION BY COALESCE(m.recordedUserId, dm.userId), m.deviceId, m.firmware, m.event_ts
         ) AS first_created_at                       -- Earliest upload of the exact device event.
-      FROM tmp_myair_device_map AS dm
-      INNER JOIN myair AS m
-        ON m.deviceId = dm.deviceId                -- Use the raw index whose first column is deviceId.
+      FROM myair AS m
+      LEFT JOIN tmp_myair_device_map AS dm
+        ON m.deviceId = dm.deviceId AND m.recordedUserId IS NULL
       LEFT JOIN tmp_myair_minutes AS scope
-        ON scope.userId = dm.userId
+        ON scope.userId = COALESCE(m.recordedUserId, dm.userId)
        AND scope.minute_ts = TIMESTAMP(
          DATE(m.event_ts),
          MAKETIME(HOUR(m.event_ts), MINUTE(m.event_ts), 0)
        )
-      WHERE dm.userId = v_user_id                  -- Keep this statement participant-sized.
+      WHERE COALESCE(m.recordedUserId, dm.userId) = v_user_id
+        AND m.deviceId IS NOT NULL
+        AND TRIM(m.deviceId) <> ''
         AND (v_is_full OR scope.userId IS NOT NULL) -- Full history or affected incremental keys.
         AND m.firmware IS NOT NULL                  -- Retained as source provenance.
         AND TRIM(m.firmware) <> ''                  -- Reject blank firmware values.
@@ -387,7 +403,7 @@ main: BEGIN                                        -- Open a named procedure blo
       SELECT
         p.*,
         COUNT(*) OVER (
-          PARTITION BY p.deviceId, p.firmware, p.event_ts
+          PARTITION BY p.userId, p.deviceId, p.firmware, p.event_ts
         ) AS payload_n                             -- More than one means values disagree.
       FROM earliest_payloads AS p
     ),
@@ -396,13 +412,13 @@ main: BEGIN                                        -- Open a named procedure blo
       SELECT
         e.*,
         COUNT(*) OVER (
-          PARTITION BY e.deviceId, e.firmware, e.minute_ts
+          PARTITION BY e.userId, e.deviceId, e.firmware, e.minute_ts
         ) AS event_n                               -- More than one makes the device-minute ambiguous.
       FROM event_checked AS e
       WHERE e.payload_n = 1                        -- Remove conflicting exact events first.
     ),
 
-    cleaned_values AS (                            -- Step 5: clean each measurement independently.
+    cleaned_values AS (                            -- Clean values; PC requires valid PM.
       SELECT
         userId,
         deviceId,
@@ -410,20 +426,50 @@ main: BEGIN                                        -- Open a named procedure blo
         event_ts,
         created_at,
         minute_ts,
-        CASE WHEN pm1 BETWEEN 0 AND 65534 THEN pm1 ELSE NULL END AS pm1,
-        CASE WHEN pm25 BETWEEN 0 AND 65534 THEN pm25 ELSE NULL END AS pm25,
-        CASE WHEN pm10 BETWEEN 0 AND 65534 THEN pm10 ELSE NULL END AS pm10,
-        CASE WHEN pc03 BETWEEN 0 AND 65534 THEN pc03 ELSE NULL END AS pc03,
-        CASE WHEN pc05 BETWEEN 0 AND 65534 THEN pc05 ELSE NULL END AS pc05,
-        CASE WHEN pc1 BETWEEN 0 AND 65534 THEN pc1 ELSE NULL END AS pc1,
-        CASE WHEN pc25 BETWEEN 0 AND 65534 THEN pc25 ELSE NULL END AS pc25,
-        CASE WHEN pc5 BETWEEN 0 AND 65534 THEN pc5 ELSE NULL END AS pc5,
-        CASE WHEN pc10 BETWEEN 0 AND 65534 THEN pc10 ELSE NULL END AS pc10,
+        CASE WHEN pm1 BETWEEN 0 AND 500 THEN pm1 ELSE NULL END AS pm1,
+        CASE WHEN pm25 BETWEEN 0 AND 500 THEN pm25 ELSE NULL END AS pm25,
+        CASE WHEN pm10 BETWEEN 0 AND 500 THEN pm10 ELSE NULL END AS pm10,
+        CASE
+          WHEN pm1 BETWEEN 0 AND 500 AND pm25 BETWEEN 0 AND 500
+           AND pm10 BETWEEN 0 AND 500
+           AND pc03 BETWEEN 0 AND 65534
+          THEN pc03 ELSE NULL
+        END AS pc03,
+        CASE
+          WHEN pm1 BETWEEN 0 AND 500 AND pm25 BETWEEN 0 AND 500
+           AND pm10 BETWEEN 0 AND 500
+           AND pc05 BETWEEN 0 AND 65534
+          THEN pc05 ELSE NULL
+        END AS pc05,
+        CASE
+          WHEN pm1 BETWEEN 0 AND 500 AND pm25 BETWEEN 0 AND 500
+           AND pm10 BETWEEN 0 AND 500
+           AND pc1 BETWEEN 0 AND 65534
+          THEN pc1 ELSE NULL
+        END AS pc1,
+        CASE
+          WHEN pm1 BETWEEN 0 AND 500 AND pm25 BETWEEN 0 AND 500
+           AND pm10 BETWEEN 0 AND 500
+           AND pc25 BETWEEN 0 AND 65534
+          THEN pc25 ELSE NULL
+        END AS pc25,
+        CASE
+          WHEN pm1 BETWEEN 0 AND 500 AND pm25 BETWEEN 0 AND 500
+           AND pm10 BETWEEN 0 AND 500
+           AND pc5 BETWEEN 0 AND 65534
+          THEN pc5 ELSE NULL
+        END AS pc5,
+        CASE
+          WHEN pm1 BETWEEN 0 AND 500 AND pm25 BETWEEN 0 AND 500
+           AND pm10 BETWEEN 0 AND 500
+           AND pc10 BETWEEN 0 AND 65534
+          THEN pc10 ELSE NULL
+        END AS pc10,
         temperature,                               -- Preserve until a defensible range is known.
         CASE WHEN humidity BETWEEN 0 AND 100 THEN humidity ELSE NULL END AS humidity,
         CASE WHEN pressure BETWEEN 300 AND 1100 THEN pressure ELSE NULL END AS pressure,
-        CASE WHEN sound BETWEEN 0 AND 200 THEN sound ELSE NULL END AS sound,
-        CASE WHEN uvb BETWEEN 0 AND 6552 THEN uvb ELSE NULL END AS uvb,
+        CASE WHEN sound BETWEEN 0 AND 1400 THEN sound / 10.0 ELSE NULL END AS sound,
+        CASE WHEN uvb BETWEEN 0 AND 6552 THEN uvb / 100.0 ELSE NULL END AS uvb,
         CASE WHEN light >= 0 THEN light ELSE NULL END AS light
       FROM device_minute_checked
       WHERE event_n = 1                            -- Keep one unambiguous event per device-minute.

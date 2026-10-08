@@ -50,3 +50,13 @@ and check expected output counts before commit. There is no persistent run log.
 
 Data rules: [tidy cleaning](tidy-cleaning.md) and [aggregations](aggregations.md).
 Execution and recovery: [install and run](install-etl.md).
+
+## Updating the ETL
+
+Install raw `recordedUserId` before the updated procedures. For NULL IDs,
+tidy uses the unique legacy device mapping. Deduplication includes `userId`.
+
+Rebuild all five tidy outputs and their aggregates to apply the changes to
+history. Confirm the database and managed tables first. Recreate MyAir tidy
+or update its CHECK constraints: `CREATE TABLE IF NOT EXISTS` does not alter
+existing constraints. Incremental runs alone leave older rows unchanged.

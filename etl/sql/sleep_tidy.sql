@@ -1,3 +1,4 @@
+-- Use recordedUserId; fall back to a unique device mapping.
 -- ============================================================================
 -- sleep_tidy.sql
 --
@@ -164,7 +165,7 @@ main: BEGIN                                        -- Open a named procedure blo
     fallsleepefficiency
   )
   SELECT
-    dm.userId,
+    COALESCE(d.recordedUserId, dm.userId),
     d.reference_date,
     d.created_at,
     d.deviceId,
@@ -177,8 +178,7 @@ main: BEGIN                                        -- Open a named procedure blo
     d.deepsleep,
     d.sleepquality,
     d.fallsleepefficiency
-  FROM tmp_sleep_device_map AS dm
-  INNER JOIN (
+  FROM (
     SELECT
       s.*,
       CASE                                         -- Reject impossible calendar combinations.
@@ -208,8 +208,10 @@ main: BEGIN                                        -- Open a named procedure blo
     FROM sleep AS s
     WHERE s.created_at <= v_raw_max_created_at     -- Stay inside this run's frozen cutoff.
   ) AS d
-    ON d.deviceId = dm.deviceId                    -- Apply only unambiguous whole-device mappings.
-  WHERE d.reference_date IS NOT NULL               -- An invalid calendar date cannot identify a night.
+  LEFT JOIN tmp_sleep_device_map AS dm
+    ON d.deviceId = dm.deviceId AND d.recordedUserId IS NULL
+  WHERE COALESCE(d.recordedUserId, dm.userId) IS NOT NULL
+    AND d.reference_date IS NOT NULL               -- An invalid calendar date cannot identify a night.
     AND d.firmware IS NOT NULL                     -- Firmware is part of the version key.
     AND TRIM(d.firmware) <> ''                     -- Exclude blank firmware identifiers.
     AND d.deviceId IS NOT NULL
@@ -291,7 +293,7 @@ main: BEGIN                                        -- Open a named procedure blo
     SELECT
       s.*,
       MAX(s.created_at) OVER (
-        PARTITION BY s.deviceId, s.firmware, s.reference_date
+        PARTITION BY s.userId, s.deviceId, s.firmware, s.reference_date
       ) AS final_created_at
     FROM scoped_source AS s
   ),
@@ -337,7 +339,7 @@ main: BEGIN                                        -- Open a named procedure blo
     SELECT
       s.*,
       COUNT(*) OVER (
-        PARTITION BY s.deviceId, s.firmware, s.reference_date
+        PARTITION BY s.userId, s.deviceId, s.firmware, s.reference_date
       ) AS final_payload_n
     FROM equal_copies_collapsed AS s
   ),
