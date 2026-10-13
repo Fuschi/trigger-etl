@@ -1,3 +1,5 @@
+-- Round measurement statistics to 2 decimal places.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- ============================================================================
 -- myair_hourly.sql
 -- Source (read only): myair_5min. Grain: participant x UTC hour.
@@ -155,21 +157,21 @@ main: BEGIN
     SUM(f.device_n > 1), SUM(f.firmware_n > 1),
     CASE WHEN SUM(f.device_n > 1) = 0 AND COUNT(DISTINCT f.deviceId) = 1 THEN MIN(f.deviceId) END,
     CASE WHEN SUM(f.firmware_n > 1) = 0 AND COUNT(DISTINCT f.firmware) = 1 THEN MIN(f.firmware) END,
-    AVG(f.pm1_mean), MIN(f.pm1_min), MAX(f.pm1_max), COUNT(f.pm1_mean), SUM(f.pm1_n),
-    AVG(f.pm25_mean), MIN(f.pm25_min), MAX(f.pm25_max), COUNT(f.pm25_mean), SUM(f.pm25_n),
-    AVG(f.pm10_mean), MIN(f.pm10_min), MAX(f.pm10_max), COUNT(f.pm10_mean), SUM(f.pm10_n),
-    AVG(f.pc03_mean), MIN(f.pc03_min), MAX(f.pc03_max), COUNT(f.pc03_mean), SUM(f.pc03_n),
-    AVG(f.pc05_mean), MIN(f.pc05_min), MAX(f.pc05_max), COUNT(f.pc05_mean), SUM(f.pc05_n),
-    AVG(f.pc1_mean), MIN(f.pc1_min), MAX(f.pc1_max), COUNT(f.pc1_mean), SUM(f.pc1_n),
-    AVG(f.pc25_mean), MIN(f.pc25_min), MAX(f.pc25_max), COUNT(f.pc25_mean), SUM(f.pc25_n),
-    AVG(f.pc5_mean), MIN(f.pc5_min), MAX(f.pc5_max), COUNT(f.pc5_mean), SUM(f.pc5_n),
-    AVG(f.pc10_mean), MIN(f.pc10_min), MAX(f.pc10_max), COUNT(f.pc10_mean), SUM(f.pc10_n),
-    AVG(f.temperature_mean), MIN(f.temperature_min), MAX(f.temperature_max), COUNT(f.temperature_mean), SUM(f.temperature_n),
-    AVG(f.humidity_mean), MIN(f.humidity_min), MAX(f.humidity_max), COUNT(f.humidity_mean), SUM(f.humidity_n),
-    AVG(f.pressure_mean), MIN(f.pressure_min), MAX(f.pressure_max), COUNT(f.pressure_mean), SUM(f.pressure_n),
-    AVG(f.sound_mean), MIN(f.sound_min), MAX(f.sound_max), COUNT(f.sound_mean), SUM(f.sound_n),
-    AVG(f.uvb_mean), MIN(f.uvb_min), MAX(f.uvb_max), COUNT(f.uvb_mean), SUM(f.uvb_n),
-    AVG(f.light_mean), MIN(f.light_min), MAX(f.light_max), COUNT(f.light_mean), SUM(f.light_n)
+    LEAST(GREATEST(ROUND(AVG(f.pm1_mean), 2), ROUND(MIN(f.pm1_min), 2)), ROUND(MAX(f.pm1_max), 2)), ROUND(MIN(f.pm1_min), 2), ROUND(MAX(f.pm1_max), 2), COUNT(f.pm1_mean), SUM(f.pm1_n),
+    LEAST(GREATEST(ROUND(AVG(f.pm25_mean), 2), ROUND(MIN(f.pm25_min), 2)), ROUND(MAX(f.pm25_max), 2)), ROUND(MIN(f.pm25_min), 2), ROUND(MAX(f.pm25_max), 2), COUNT(f.pm25_mean), SUM(f.pm25_n),
+    LEAST(GREATEST(ROUND(AVG(f.pm10_mean), 2), ROUND(MIN(f.pm10_min), 2)), ROUND(MAX(f.pm10_max), 2)), ROUND(MIN(f.pm10_min), 2), ROUND(MAX(f.pm10_max), 2), COUNT(f.pm10_mean), SUM(f.pm10_n),
+    LEAST(GREATEST(ROUND(AVG(f.pc03_mean), 2), ROUND(MIN(f.pc03_min), 2)), ROUND(MAX(f.pc03_max), 2)), ROUND(MIN(f.pc03_min), 2), ROUND(MAX(f.pc03_max), 2), COUNT(f.pc03_mean), SUM(f.pc03_n),
+    LEAST(GREATEST(ROUND(AVG(f.pc05_mean), 2), ROUND(MIN(f.pc05_min), 2)), ROUND(MAX(f.pc05_max), 2)), ROUND(MIN(f.pc05_min), 2), ROUND(MAX(f.pc05_max), 2), COUNT(f.pc05_mean), SUM(f.pc05_n),
+    LEAST(GREATEST(ROUND(AVG(f.pc1_mean), 2), ROUND(MIN(f.pc1_min), 2)), ROUND(MAX(f.pc1_max), 2)), ROUND(MIN(f.pc1_min), 2), ROUND(MAX(f.pc1_max), 2), COUNT(f.pc1_mean), SUM(f.pc1_n),
+    LEAST(GREATEST(ROUND(AVG(f.pc25_mean), 2), ROUND(MIN(f.pc25_min), 2)), ROUND(MAX(f.pc25_max), 2)), ROUND(MIN(f.pc25_min), 2), ROUND(MAX(f.pc25_max), 2), COUNT(f.pc25_mean), SUM(f.pc25_n),
+    LEAST(GREATEST(ROUND(AVG(f.pc5_mean), 2), ROUND(MIN(f.pc5_min), 2)), ROUND(MAX(f.pc5_max), 2)), ROUND(MIN(f.pc5_min), 2), ROUND(MAX(f.pc5_max), 2), COUNT(f.pc5_mean), SUM(f.pc5_n),
+    LEAST(GREATEST(ROUND(AVG(f.pc10_mean), 2), ROUND(MIN(f.pc10_min), 2)), ROUND(MAX(f.pc10_max), 2)), ROUND(MIN(f.pc10_min), 2), ROUND(MAX(f.pc10_max), 2), COUNT(f.pc10_mean), SUM(f.pc10_n),
+    LEAST(GREATEST(ROUND(AVG(f.temperature_mean), 2), ROUND(MIN(f.temperature_min), 2)), ROUND(MAX(f.temperature_max), 2)), ROUND(MIN(f.temperature_min), 2), ROUND(MAX(f.temperature_max), 2), COUNT(f.temperature_mean), SUM(f.temperature_n),
+    LEAST(GREATEST(ROUND(AVG(f.humidity_mean), 2), ROUND(MIN(f.humidity_min), 2)), ROUND(MAX(f.humidity_max), 2)), ROUND(MIN(f.humidity_min), 2), ROUND(MAX(f.humidity_max), 2), COUNT(f.humidity_mean), SUM(f.humidity_n),
+    LEAST(GREATEST(ROUND(AVG(f.pressure_mean), 2), ROUND(MIN(f.pressure_min), 2)), ROUND(MAX(f.pressure_max), 2)), ROUND(MIN(f.pressure_min), 2), ROUND(MAX(f.pressure_max), 2), COUNT(f.pressure_mean), SUM(f.pressure_n),
+    LEAST(GREATEST(ROUND(AVG(f.sound_mean), 2), ROUND(MIN(f.sound_min), 2)), ROUND(MAX(f.sound_max), 2)), ROUND(MIN(f.sound_min), 2), ROUND(MAX(f.sound_max), 2), COUNT(f.sound_mean), SUM(f.sound_n),
+    LEAST(GREATEST(ROUND(AVG(f.uvb_mean), 2), ROUND(MIN(f.uvb_min), 2)), ROUND(MAX(f.uvb_max), 2)), ROUND(MIN(f.uvb_min), 2), ROUND(MAX(f.uvb_max), 2), COUNT(f.uvb_mean), SUM(f.uvb_n),
+    LEAST(GREATEST(ROUND(AVG(f.light_mean), 2), ROUND(MIN(f.light_min), 2)), ROUND(MAX(f.light_max), 2)), ROUND(MIN(f.light_min), 2), ROUND(MAX(f.light_max), 2), COUNT(f.light_mean), SUM(f.light_n)
   FROM myair_5min AS f
   GROUP BY f.userId, TIMESTAMP(DATE(f.bucket_5min), MAKETIME(HOUR(f.bucket_5min), 0, 0));
 

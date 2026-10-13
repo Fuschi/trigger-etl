@@ -1,3 +1,5 @@
+-- Round measurement statistics to 2 decimal places.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- ============================================================================
 -- smartwatchhigh_daily.sql
 -- Source (read only): smartwatchhigh_hourly. Grain: participant x UTC calendar date.
@@ -237,17 +239,17 @@ main: BEGIN
            AND COUNT(DISTINCT g.deviceId) = 1 THEN MIN(g.deviceId) END,
     CASE WHEN COUNT(g.hour_ts) = COUNT(g.firmware)
            AND COUNT(DISTINCT g.firmware) = 1 THEN MIN(g.firmware) END,
-    AVG(g.heartrate_mean), MIN(g.heartrate_min), MAX(g.heartrate_max),
+    LEAST(GREATEST(ROUND(AVG(g.heartrate_mean), 2), ROUND(MIN(g.heartrate_min), 2)), ROUND(MAX(g.heartrate_max), 2)), ROUND(MIN(g.heartrate_min), 2), ROUND(MAX(g.heartrate_max), 2),
     COUNT(g.heartrate_mean), COALESCE(SUM(g.heartrate_5min_n), 0),
     COALESCE(SUM(g.heartrate_minute_n), 0),
     COALESCE(SUM(g.heartrate_5min_n = 12), 0),
     JSON_ARRAYAGG(COALESCE(g.heartrate_5min_n, 0) ORDER BY g.hour_n),
-    AVG(g.oxygens_mean), MIN(g.oxygens_min), MAX(g.oxygens_max),
+    LEAST(GREATEST(ROUND(AVG(g.oxygens_mean), 2), ROUND(MIN(g.oxygens_min), 2)), ROUND(MAX(g.oxygens_max), 2)), ROUND(MIN(g.oxygens_min), 2), ROUND(MAX(g.oxygens_max), 2),
     COUNT(g.oxygens_mean), COALESCE(SUM(g.oxygens_5min_n), 0),
     COALESCE(SUM(g.oxygens_minute_n), 0),
     COALESCE(SUM(g.oxygens_5min_n = 12), 0),
     JSON_ARRAYAGG(COALESCE(g.oxygens_5min_n, 0) ORDER BY g.hour_n),
-    AVG(g.breathrate_mean), MIN(g.breathrate_min), MAX(g.breathrate_max),
+    LEAST(GREATEST(ROUND(AVG(g.breathrate_mean), 2), ROUND(MIN(g.breathrate_min), 2)), ROUND(MAX(g.breathrate_max), 2)), ROUND(MIN(g.breathrate_min), 2), ROUND(MAX(g.breathrate_max), 2),
     COUNT(g.breathrate_mean), COALESCE(SUM(g.breathrate_5min_n), 0),
     COALESCE(SUM(g.breathrate_minute_n), 0),
     COALESCE(SUM(g.breathrate_5min_n = 12), 0),

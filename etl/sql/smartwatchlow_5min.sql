@@ -1,3 +1,5 @@
+-- Round measurement statistics to 2 decimal places.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- ============================================================================
 -- smartwatchlow_5min.sql
 --
@@ -157,12 +159,12 @@ main: BEGIN
     COUNT(DISTINCT t.firmware),
     CASE WHEN COUNT(DISTINCT t.deviceId) = 1 THEN MIN(t.deviceId) ELSE NULL END,
     CASE WHEN COUNT(DISTINCT t.firmware) = 1 THEN MIN(t.firmware) ELSE NULL END,
-    AVG(t.step), MIN(t.step), MAX(t.step), COUNT(t.step),
-    AVG(t.cal), MIN(t.cal), MAX(t.cal), COUNT(t.cal),
-    AVG(t.bphigh), MIN(t.bphigh), MAX(t.bphigh), COUNT(t.bphigh),
-    AVG(t.bplow), MIN(t.bplow), MAX(t.bplow), COUNT(t.bplow),
-    AVG(t.bodytemp), MIN(t.bodytemp), MAX(t.bodytemp), COUNT(t.bodytemp),
-    AVG(t.skintemp), MIN(t.skintemp), MAX(t.skintemp), COUNT(t.skintemp)
+    LEAST(GREATEST(ROUND(AVG(t.step), 2), ROUND(MIN(t.step), 2)), ROUND(MAX(t.step), 2)), ROUND(MIN(t.step), 2), ROUND(MAX(t.step), 2), COUNT(t.step),
+    LEAST(GREATEST(ROUND(AVG(t.cal), 2), ROUND(MIN(t.cal), 2)), ROUND(MAX(t.cal), 2)), ROUND(MIN(t.cal), 2), ROUND(MAX(t.cal), 2), COUNT(t.cal),
+    LEAST(GREATEST(ROUND(AVG(t.bphigh), 2), ROUND(MIN(t.bphigh), 2)), ROUND(MAX(t.bphigh), 2)), ROUND(MIN(t.bphigh), 2), ROUND(MAX(t.bphigh), 2), COUNT(t.bphigh),
+    LEAST(GREATEST(ROUND(AVG(t.bplow), 2), ROUND(MIN(t.bplow), 2)), ROUND(MAX(t.bplow), 2)), ROUND(MIN(t.bplow), 2), ROUND(MAX(t.bplow), 2), COUNT(t.bplow),
+    LEAST(GREATEST(ROUND(AVG(t.bodytemp), 2), ROUND(MIN(t.bodytemp), 2)), ROUND(MAX(t.bodytemp), 2)), ROUND(MIN(t.bodytemp), 2), ROUND(MAX(t.bodytemp), 2), COUNT(t.bodytemp),
+    LEAST(GREATEST(ROUND(AVG(t.skintemp), 2), ROUND(MIN(t.skintemp), 2)), ROUND(MAX(t.skintemp), 2)), ROUND(MIN(t.skintemp), 2), ROUND(MAX(t.skintemp), 2), COUNT(t.skintemp)
   FROM smartwatchlow_tidy AS t
   GROUP BY t.userId, t.bucket_5min;
 

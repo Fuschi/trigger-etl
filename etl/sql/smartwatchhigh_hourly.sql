@@ -1,3 +1,5 @@
+-- Round measurement statistics to 2 decimal places.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- ============================================================================
 -- smartwatchhigh_hourly.sql
 -- Source (read only): smartwatchhigh_5min. Grain: participant x UTC hour.
@@ -115,9 +117,9 @@ main: BEGIN
     SUM(f.device_n > 1), SUM(f.firmware_n > 1),
     CASE WHEN SUM(f.device_n > 1) = 0 AND COUNT(DISTINCT f.deviceId) = 1 THEN MIN(f.deviceId) END,
     CASE WHEN SUM(f.firmware_n > 1) = 0 AND COUNT(DISTINCT f.firmware) = 1 THEN MIN(f.firmware) END,
-    AVG(f.heartrate_mean), MIN(f.heartrate_min), MAX(f.heartrate_max), COUNT(f.heartrate_mean), SUM(f.heartrate_n),
-    AVG(f.oxygens_mean), MIN(f.oxygens_min), MAX(f.oxygens_max), COUNT(f.oxygens_mean), SUM(f.oxygens_n),
-    AVG(f.breathrate_mean), MIN(f.breathrate_min), MAX(f.breathrate_max), COUNT(f.breathrate_mean), SUM(f.breathrate_n),
+    LEAST(GREATEST(ROUND(AVG(f.heartrate_mean), 2), ROUND(MIN(f.heartrate_min), 2)), ROUND(MAX(f.heartrate_max), 2)), ROUND(MIN(f.heartrate_min), 2), ROUND(MAX(f.heartrate_max), 2), COUNT(f.heartrate_mean), SUM(f.heartrate_n),
+    LEAST(GREATEST(ROUND(AVG(f.oxygens_mean), 2), ROUND(MIN(f.oxygens_min), 2)), ROUND(MAX(f.oxygens_max), 2)), ROUND(MIN(f.oxygens_min), 2), ROUND(MAX(f.oxygens_max), 2), COUNT(f.oxygens_mean), SUM(f.oxygens_n),
+    LEAST(GREATEST(ROUND(AVG(f.breathrate_mean), 2), ROUND(MIN(f.breathrate_min), 2)), ROUND(MAX(f.breathrate_max), 2)), ROUND(MIN(f.breathrate_min), 2), ROUND(MAX(f.breathrate_max), 2), COUNT(f.breathrate_mean), SUM(f.breathrate_n),
     SUM(f.sleeprate_n > 0), SUM(f.sleeprate_n),
     SUM(f.sleeprate_0_n), SUM(f.sleeprate_1_n), SUM(f.sleeprate_2_n),
     SUM(f.sleeprate_3_n), SUM(f.sleeprate_4_n)

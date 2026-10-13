@@ -1,3 +1,5 @@
+-- Round measurement statistics to 6 places for coordinates, 2 for accuracy.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- One row per participant and UTC five-minute bucket.
 -- All *_n count non-NULL values, not accuracy quality.
 -- Statistics remain numeric for existing analyses. Full transactional rebuild.
@@ -154,15 +156,15 @@ main: BEGIN
     END AS firmware,
     COUNT(t.longitude) AS longitude_n,
     COUNT(t.latitude) AS latitude_n,
-    AVG(t.longitude) AS longitude_mean,
-    MIN(t.longitude) AS longitude_min,
-    MAX(t.longitude) AS longitude_max,
-    AVG(t.latitude) AS latitude_mean,
-    MIN(t.latitude) AS latitude_min,
-    MAX(t.latitude) AS latitude_max,
-    AVG(t.accuracy) AS accuracy_mean,
-    MIN(t.accuracy) AS accuracy_min,
-    MAX(t.accuracy) AS accuracy_max,
+    LEAST(GREATEST(ROUND(AVG(t.longitude), 6), ROUND(MIN(t.longitude), 6)), ROUND(MAX(t.longitude), 6)) AS longitude_mean,
+    ROUND(MIN(t.longitude), 6) AS longitude_min,
+    ROUND(MAX(t.longitude), 6) AS longitude_max,
+    LEAST(GREATEST(ROUND(AVG(t.latitude), 6), ROUND(MIN(t.latitude), 6)), ROUND(MAX(t.latitude), 6)) AS latitude_mean,
+    ROUND(MIN(t.latitude), 6) AS latitude_min,
+    ROUND(MAX(t.latitude), 6) AS latitude_max,
+    LEAST(GREATEST(ROUND(AVG(t.accuracy), 2), ROUND(MIN(t.accuracy), 2)), ROUND(MAX(t.accuracy), 2)) AS accuracy_mean,
+    ROUND(MIN(t.accuracy), 2) AS accuracy_min,
+    ROUND(MAX(t.accuracy), 2) AS accuracy_max,
     COUNT(t.accuracy) AS accuracy_n
   FROM gps_tidy AS t
   GROUP BY

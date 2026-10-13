@@ -1,3 +1,5 @@
+-- Round measurement statistics to 2 decimal places.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- ============================================================================
 -- smartwatchhigh_5min.sql
 --
@@ -143,9 +145,9 @@ main: BEGIN
     COUNT(DISTINCT t.firmware),
     CASE WHEN COUNT(DISTINCT t.deviceId) = 1 THEN MIN(t.deviceId) ELSE NULL END,
     CASE WHEN COUNT(DISTINCT t.firmware) = 1 THEN MIN(t.firmware) ELSE NULL END,
-    AVG(t.heartrate), MIN(t.heartrate), MAX(t.heartrate), COUNT(t.heartrate),
-    AVG(t.oxygens), MIN(t.oxygens), MAX(t.oxygens), COUNT(t.oxygens),
-    AVG(t.breathrate), MIN(t.breathrate), MAX(t.breathrate), COUNT(t.breathrate),
+    LEAST(GREATEST(ROUND(AVG(t.heartrate), 2), ROUND(MIN(t.heartrate), 2)), ROUND(MAX(t.heartrate), 2)), ROUND(MIN(t.heartrate), 2), ROUND(MAX(t.heartrate), 2), COUNT(t.heartrate),
+    LEAST(GREATEST(ROUND(AVG(t.oxygens), 2), ROUND(MIN(t.oxygens), 2)), ROUND(MAX(t.oxygens), 2)), ROUND(MIN(t.oxygens), 2), ROUND(MAX(t.oxygens), 2), COUNT(t.oxygens),
+    LEAST(GREATEST(ROUND(AVG(t.breathrate), 2), ROUND(MIN(t.breathrate), 2)), ROUND(MAX(t.breathrate), 2)), ROUND(MIN(t.breathrate), 2), ROUND(MAX(t.breathrate), 2), COUNT(t.breathrate),
     COUNT(t.sleeprate),
     SUM(CASE WHEN t.sleeprate = 0 THEN 1 ELSE 0 END),
     SUM(CASE WHEN t.sleeprate = 1 THEN 1 ELSE 0 END),

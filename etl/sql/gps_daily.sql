@@ -1,3 +1,5 @@
+-- Round measurement statistics to 6 places for coordinates, 2 for accuracy.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- One row per participant and UTC day.
 -- Means weight available hourly means equally.
 -- Each variable has counts and a 24-entry profile, ordered 00 through 23 UTC.
@@ -198,9 +200,9 @@ main: BEGIN
     COUNT(g.hour_ts), COALESCE(SUM(g.observed_5min_n), 0),
     COALESCE(SUM(g.observed_minute_n), 0), COALESCE(SUM(g.observed_5min_n = 12), 0),
     JSON_ARRAYAGG(COALESCE(g.observed_5min_n, 0) ORDER BY g.hour_n),
-    AVG(g.longitude_mean), MIN(g.longitude_min), MAX(g.longitude_max),
-    AVG(g.latitude_mean), MIN(g.latitude_min), MAX(g.latitude_max),
-    AVG(g.accuracy_mean), MIN(g.accuracy_min), MAX(g.accuracy_max),
+    LEAST(GREATEST(ROUND(AVG(g.longitude_mean), 6), ROUND(MIN(g.longitude_min), 6)), ROUND(MAX(g.longitude_max), 6)), ROUND(MIN(g.longitude_min), 6), ROUND(MAX(g.longitude_max), 6),
+    LEAST(GREATEST(ROUND(AVG(g.latitude_mean), 6), ROUND(MIN(g.latitude_min), 6)), ROUND(MAX(g.latitude_max), 6)), ROUND(MIN(g.latitude_min), 6), ROUND(MAX(g.latitude_max), 6),
+    LEAST(GREATEST(ROUND(AVG(g.accuracy_mean), 2), ROUND(MIN(g.accuracy_min), 2)), ROUND(MAX(g.accuracy_max), 2)), ROUND(MIN(g.accuracy_min), 2), ROUND(MAX(g.accuracy_max), 2),
     COUNT(g.accuracy_mean), COALESCE(SUM(g.accuracy_5min_n), 0),
     COALESCE(SUM(g.accuracy_minute_n), 0),
     COALESCE(SUM(g.accuracy_5min_n = 12), 0),

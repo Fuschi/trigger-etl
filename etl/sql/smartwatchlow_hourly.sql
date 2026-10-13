@@ -1,3 +1,5 @@
+-- Round measurement statistics to 2 decimal places.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- ============================================================================
 -- smartwatchlow_hourly.sql
 -- Source (read only): smartwatchlow_5min. Grain: participant x UTC hour.
@@ -119,12 +121,12 @@ main: BEGIN
     SUM(f.device_n > 1), SUM(f.firmware_n > 1),
     CASE WHEN SUM(f.device_n > 1) = 0 AND COUNT(DISTINCT f.deviceId) = 1 THEN MIN(f.deviceId) END,
     CASE WHEN SUM(f.firmware_n > 1) = 0 AND COUNT(DISTINCT f.firmware) = 1 THEN MIN(f.firmware) END,
-    AVG(f.step_mean), MIN(f.step_min), MAX(f.step_max), COUNT(f.step_mean), SUM(f.step_n),
-    AVG(f.cal_mean), MIN(f.cal_min), MAX(f.cal_max), COUNT(f.cal_mean), SUM(f.cal_n),
-    AVG(f.bphigh_mean), MIN(f.bphigh_min), MAX(f.bphigh_max), COUNT(f.bphigh_mean), SUM(f.bphigh_n),
-    AVG(f.bplow_mean), MIN(f.bplow_min), MAX(f.bplow_max), COUNT(f.bplow_mean), SUM(f.bplow_n),
-    AVG(f.bodytemp_mean), MIN(f.bodytemp_min), MAX(f.bodytemp_max), COUNT(f.bodytemp_mean), SUM(f.bodytemp_n),
-    AVG(f.skintemp_mean), MIN(f.skintemp_min), MAX(f.skintemp_max), COUNT(f.skintemp_mean), SUM(f.skintemp_n)
+    LEAST(GREATEST(ROUND(AVG(f.step_mean), 2), ROUND(MIN(f.step_min), 2)), ROUND(MAX(f.step_max), 2)), ROUND(MIN(f.step_min), 2), ROUND(MAX(f.step_max), 2), COUNT(f.step_mean), SUM(f.step_n),
+    LEAST(GREATEST(ROUND(AVG(f.cal_mean), 2), ROUND(MIN(f.cal_min), 2)), ROUND(MAX(f.cal_max), 2)), ROUND(MIN(f.cal_min), 2), ROUND(MAX(f.cal_max), 2), COUNT(f.cal_mean), SUM(f.cal_n),
+    LEAST(GREATEST(ROUND(AVG(f.bphigh_mean), 2), ROUND(MIN(f.bphigh_min), 2)), ROUND(MAX(f.bphigh_max), 2)), ROUND(MIN(f.bphigh_min), 2), ROUND(MAX(f.bphigh_max), 2), COUNT(f.bphigh_mean), SUM(f.bphigh_n),
+    LEAST(GREATEST(ROUND(AVG(f.bplow_mean), 2), ROUND(MIN(f.bplow_min), 2)), ROUND(MAX(f.bplow_max), 2)), ROUND(MIN(f.bplow_min), 2), ROUND(MAX(f.bplow_max), 2), COUNT(f.bplow_mean), SUM(f.bplow_n),
+    LEAST(GREATEST(ROUND(AVG(f.bodytemp_mean), 2), ROUND(MIN(f.bodytemp_min), 2)), ROUND(MAX(f.bodytemp_max), 2)), ROUND(MIN(f.bodytemp_min), 2), ROUND(MAX(f.bodytemp_max), 2), COUNT(f.bodytemp_mean), SUM(f.bodytemp_n),
+    LEAST(GREATEST(ROUND(AVG(f.skintemp_mean), 2), ROUND(MIN(f.skintemp_min), 2)), ROUND(MAX(f.skintemp_max), 2)), ROUND(MIN(f.skintemp_min), 2), ROUND(MAX(f.skintemp_max), 2), COUNT(f.skintemp_mean), SUM(f.skintemp_n)
   FROM smartwatchlow_5min AS f
   GROUP BY f.userId, TIMESTAMP(DATE(f.bucket_5min), MAKETIME(HOUR(f.bucket_5min), 0, 0));
 

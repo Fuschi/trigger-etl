@@ -1,3 +1,5 @@
+-- Round measurement statistics to 2 decimal places.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- ============================================================================
 -- myair_5min.sql
 --
@@ -221,21 +223,21 @@ main: BEGIN
     CASE WHEN COUNT(DISTINCT t.deviceId) = 1 THEN MIN(t.deviceId) ELSE NULL END,
     CASE WHEN COUNT(DISTINCT t.firmware) = 1 THEN MIN(t.firmware) ELSE NULL END,
 
-    AVG(t.pm1), MIN(t.pm1), MAX(t.pm1), COUNT(t.pm1),
-    AVG(t.pm25), MIN(t.pm25), MAX(t.pm25), COUNT(t.pm25),
-    AVG(t.pm10), MIN(t.pm10), MAX(t.pm10), COUNT(t.pm10),
-    AVG(t.pc03), MIN(t.pc03), MAX(t.pc03), COUNT(t.pc03),
-    AVG(t.pc05), MIN(t.pc05), MAX(t.pc05), COUNT(t.pc05),
-    AVG(t.pc1), MIN(t.pc1), MAX(t.pc1), COUNT(t.pc1),
-    AVG(t.pc25), MIN(t.pc25), MAX(t.pc25), COUNT(t.pc25),
-    AVG(t.pc5), MIN(t.pc5), MAX(t.pc5), COUNT(t.pc5),
-    AVG(t.pc10), MIN(t.pc10), MAX(t.pc10), COUNT(t.pc10),
-    AVG(t.temperature), MIN(t.temperature), MAX(t.temperature), COUNT(t.temperature),
-    AVG(t.humidity), MIN(t.humidity), MAX(t.humidity), COUNT(t.humidity),
-    AVG(t.pressure), MIN(t.pressure), MAX(t.pressure), COUNT(t.pressure),
-    AVG(t.sound), MIN(t.sound), MAX(t.sound), COUNT(t.sound),
-    AVG(t.uvb), MIN(t.uvb), MAX(t.uvb), COUNT(t.uvb),
-    AVG(t.light), MIN(t.light), MAX(t.light), COUNT(t.light)
+    LEAST(GREATEST(ROUND(AVG(t.pm1), 2), ROUND(MIN(t.pm1), 2)), ROUND(MAX(t.pm1), 2)), ROUND(MIN(t.pm1), 2), ROUND(MAX(t.pm1), 2), COUNT(t.pm1),
+    LEAST(GREATEST(ROUND(AVG(t.pm25), 2), ROUND(MIN(t.pm25), 2)), ROUND(MAX(t.pm25), 2)), ROUND(MIN(t.pm25), 2), ROUND(MAX(t.pm25), 2), COUNT(t.pm25),
+    LEAST(GREATEST(ROUND(AVG(t.pm10), 2), ROUND(MIN(t.pm10), 2)), ROUND(MAX(t.pm10), 2)), ROUND(MIN(t.pm10), 2), ROUND(MAX(t.pm10), 2), COUNT(t.pm10),
+    LEAST(GREATEST(ROUND(AVG(t.pc03), 2), ROUND(MIN(t.pc03), 2)), ROUND(MAX(t.pc03), 2)), ROUND(MIN(t.pc03), 2), ROUND(MAX(t.pc03), 2), COUNT(t.pc03),
+    LEAST(GREATEST(ROUND(AVG(t.pc05), 2), ROUND(MIN(t.pc05), 2)), ROUND(MAX(t.pc05), 2)), ROUND(MIN(t.pc05), 2), ROUND(MAX(t.pc05), 2), COUNT(t.pc05),
+    LEAST(GREATEST(ROUND(AVG(t.pc1), 2), ROUND(MIN(t.pc1), 2)), ROUND(MAX(t.pc1), 2)), ROUND(MIN(t.pc1), 2), ROUND(MAX(t.pc1), 2), COUNT(t.pc1),
+    LEAST(GREATEST(ROUND(AVG(t.pc25), 2), ROUND(MIN(t.pc25), 2)), ROUND(MAX(t.pc25), 2)), ROUND(MIN(t.pc25), 2), ROUND(MAX(t.pc25), 2), COUNT(t.pc25),
+    LEAST(GREATEST(ROUND(AVG(t.pc5), 2), ROUND(MIN(t.pc5), 2)), ROUND(MAX(t.pc5), 2)), ROUND(MIN(t.pc5), 2), ROUND(MAX(t.pc5), 2), COUNT(t.pc5),
+    LEAST(GREATEST(ROUND(AVG(t.pc10), 2), ROUND(MIN(t.pc10), 2)), ROUND(MAX(t.pc10), 2)), ROUND(MIN(t.pc10), 2), ROUND(MAX(t.pc10), 2), COUNT(t.pc10),
+    LEAST(GREATEST(ROUND(AVG(t.temperature), 2), ROUND(MIN(t.temperature), 2)), ROUND(MAX(t.temperature), 2)), ROUND(MIN(t.temperature), 2), ROUND(MAX(t.temperature), 2), COUNT(t.temperature),
+    LEAST(GREATEST(ROUND(AVG(t.humidity), 2), ROUND(MIN(t.humidity), 2)), ROUND(MAX(t.humidity), 2)), ROUND(MIN(t.humidity), 2), ROUND(MAX(t.humidity), 2), COUNT(t.humidity),
+    LEAST(GREATEST(ROUND(AVG(t.pressure), 2), ROUND(MIN(t.pressure), 2)), ROUND(MAX(t.pressure), 2)), ROUND(MIN(t.pressure), 2), ROUND(MAX(t.pressure), 2), COUNT(t.pressure),
+    LEAST(GREATEST(ROUND(AVG(t.sound), 2), ROUND(MIN(t.sound), 2)), ROUND(MAX(t.sound), 2)), ROUND(MIN(t.sound), 2), ROUND(MAX(t.sound), 2), COUNT(t.sound),
+    LEAST(GREATEST(ROUND(AVG(t.uvb), 2), ROUND(MIN(t.uvb), 2)), ROUND(MAX(t.uvb), 2)), ROUND(MIN(t.uvb), 2), ROUND(MAX(t.uvb), 2), COUNT(t.uvb),
+    LEAST(GREATEST(ROUND(AVG(t.light), 2), ROUND(MIN(t.light), 2)), ROUND(MAX(t.light), 2)), ROUND(MIN(t.light), 2), ROUND(MAX(t.light), 2), COUNT(t.light)
   FROM myair_tidy AS t
   GROUP BY t.userId, t.bucket_5min;
 

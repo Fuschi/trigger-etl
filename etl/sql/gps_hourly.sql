@@ -1,3 +1,5 @@
+-- Round measurement statistics to 6 places for coordinates, 2 for accuracy.
+-- Clamp rounded means to rounded extrema: floating-point AVG can cross a rounding boundary.
 -- One row per participant and UTC hour.
 -- Means weight available five-minute means equally.
 -- Each variable has its own five-minute and minute counts. Full rebuild.
@@ -115,9 +117,9 @@ main: BEGIN
     CASE WHEN SUM(f.device_n > 1) = 0 AND COUNT(DISTINCT f.deviceId) = 1 THEN MIN(f.deviceId) END,
     CASE WHEN SUM(f.firmware_n > 1) = 0 AND COUNT(DISTINCT f.firmware) = 1 THEN MIN(f.firmware) END,
     COUNT(f.longitude_mean), SUM(f.longitude_n), COUNT(f.latitude_mean), SUM(f.latitude_n),
-    AVG(f.longitude_mean), MIN(f.longitude_min), MAX(f.longitude_max),
-    AVG(f.latitude_mean), MIN(f.latitude_min), MAX(f.latitude_max),
-    AVG(f.accuracy_mean), MIN(f.accuracy_min), MAX(f.accuracy_max),
+    LEAST(GREATEST(ROUND(AVG(f.longitude_mean), 6), ROUND(MIN(f.longitude_min), 6)), ROUND(MAX(f.longitude_max), 6)), ROUND(MIN(f.longitude_min), 6), ROUND(MAX(f.longitude_max), 6),
+    LEAST(GREATEST(ROUND(AVG(f.latitude_mean), 6), ROUND(MIN(f.latitude_min), 6)), ROUND(MAX(f.latitude_max), 6)), ROUND(MIN(f.latitude_min), 6), ROUND(MAX(f.latitude_max), 6),
+    LEAST(GREATEST(ROUND(AVG(f.accuracy_mean), 2), ROUND(MIN(f.accuracy_min), 2)), ROUND(MAX(f.accuracy_max), 2)), ROUND(MIN(f.accuracy_min), 2), ROUND(MAX(f.accuracy_max), 2),
     COUNT(f.accuracy_mean), SUM(f.accuracy_n)
   FROM gps_5min AS f
   GROUP BY f.userId, hour_ts;
