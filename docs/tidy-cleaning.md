@@ -40,6 +40,10 @@ exclude only rows with NULL `recordedUserId`; see [refresh limits](architecture.
 
 ## Measurements
 
+For supplier confirmations and unresolved calibration, see
+[sensor corrections](sensor-corrections.md). Technical bounds below are
+distinguished from corrections confirmed by the supplier.
+
 Unless stated otherwise, an invalid value becomes `NULL`, preserving other
 usable measurements in the row. These are technical rules, not clinical filters.
 
@@ -67,12 +71,14 @@ measure presence, not position quality.
 | `uvb` | Raw 0…6552, then divide by 100 | UV index; excludes raw sentinel 6553 |
 | `light` | ≥0, unchanged | Lux; observed saturation plateau 18905 is retained |
 
-Arun's emails (24–29 September 2026) confirm PM bounds and sound/UV scales.
+Supplier emails (24–29 September 2026) confirm PM bounds and sound/UV scales.
 If any PM is invalid or missing, all PC values become NULL. Valid PM values
 remain independent; existing PC bounds exclude sentinel 65535.
 The 140 dB sound ceiling is provisional and excludes raw 1792 (179.2 dB).
-Calibration formulas were not supplied; no temperature/humidity or
-angle-dependent light/UV correction is applied.
+Calibration formulas have not been incorporated into the ETL; no
+temperature/humidity or angle-dependent light/UV correction is applied.
+The email refers to a calibration attachment; see
+[calibration status](sensor-corrections.md#calibration-still-unresolved).
 
 [SQL](../etl/sql/myair_tidy.sql).
 
@@ -85,7 +91,7 @@ angle-dependent light/UV correction is applied.
 | `bodytemp` | Raw `skintemp`; zero becomes `NULL` | Body temperature; unit/range unresolved |
 | `skintemp` | Raw `bodytemp`; zero becomes `NULL` | Skin temperature; unit/range unresolved |
 
-Temperature labels are swapped and zeros become NULL (Arun, 29 September
+Temperature labels are swapped and zeros become NULL (supplier email, 29 September
 2026). Units and further validity bounds remain unconfirmed.
 
 Steps and calories repeat within five-minute periods. Their exact semantics

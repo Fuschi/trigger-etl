@@ -36,6 +36,23 @@ their coverage. This is a project convention, not a completeness adjustment.
 
 Units and retained fields: [tidy cleaning](tidy-cleaning.md#measurements).
 
+## Numerical precision
+
+At every aggregation level, measurement means, minima and maxima are rounded
+to two decimal places; GPS longitude and latitude use six. Columns remain
+`DOUBLE`. Each rounded mean is bounded by its rounded extrema with
+`LEAST(GREATEST(rounded_mean, rounded_min), rounded_max)` to prevent
+floating-point accumulation near a rounding boundary from violating
+`MIN <= MEAN <= MAX`. Existing CHECK constraints remain active.
+
+Rounding and bounding preserve all-null statistics and availability counts.
+One valid observation produces equal mean, minimum and maximum. Hourly and
+daily means remain unweighted averages of lower-layer means; rounding does
+not change the weighting rule. Small positive means can round to zero, and
+higher layers consume the rounded lower-layer values. In particular, two
+places retain individual MyAir UV readings' decimal resolution but can lose
+precision in their means; see [UV precision](sensor-corrections.md#uv-precision-readings-versus-aggregate-means).
+
 ## Coverage
 
 | Layer | General counts | Per-measurement counts (`x`) |

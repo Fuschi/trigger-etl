@@ -1,6 +1,7 @@
 -- Use recordedUserId; fall back to a unique device mapping.
 -- ============================================================================
 -- myair_tidy.sql
+-- Supplier corrections and limits: docs/sensor-corrections.md.
 --
 -- Source tables (read only):
 --   myair(deviceId, firmware, event_ts DATETIME, created_at TIMESTAMP,
@@ -465,12 +466,14 @@ main: BEGIN                                        -- Open a named procedure blo
            AND pc10 BETWEEN 0 AND 65534
           THEN pc10 ELSE NULL
         END AS pc10,
-        temperature,                               -- Preserve until a defensible range is known.
+        temperature,                               -- No heating-calibration formula is applied.
         CASE WHEN humidity BETWEEN 0 AND 100 THEN humidity ELSE NULL END AS humidity,
         CASE WHEN pressure BETWEEN 300 AND 1100 THEN pressure ELSE NULL END AS pressure,
+        -- Supplier email (24 Sep 2026): sound is dB x 10; UV is UV index x 100.
+        -- Bounds are ETL technical rules; UV rescaling is not rounded here.
         CASE WHEN sound BETWEEN 0 AND 1400 THEN sound / 10.0 ELSE NULL END AS sound,
         CASE WHEN uvb BETWEEN 0 AND 6552 THEN uvb / 100.0 ELSE NULL END AS uvb,
-        CASE WHEN light >= 0 THEN light ELSE NULL END AS light
+        CASE WHEN light >= 0 THEN light ELSE NULL END AS light -- Already lux; no angle correction.
       FROM device_minute_checked
       WHERE event_n = 1                            -- Keep one unambiguous event per device-minute.
     ),

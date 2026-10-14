@@ -1,6 +1,7 @@
 -- Use recordedUserId; fall back to a unique device mapping.
 -- ============================================================================
 -- smartwatchlow_tidy.sql
+-- Supplier corrections and limits: docs/sensor-corrections.md.
 --
 -- Source tables (read only):
 --   smartwatchlow(deviceId, firmware, event_ts DATETIME,
@@ -33,8 +34,8 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_tidy (   -- Preserve a compatible exist
 
   step     INT NULL,                               -- Integer five-minute step value repeated in raw minutes.
   cal      INT NULL,                               -- Non-negative recorded integer; unit unresolved.
-  bphigh   INT NULL,                               -- Greater positive blood-pressure value in mmHg.
-  bplow    INT NULL,                               -- Lower positive blood-pressure value in mmHg.
+  bphigh   INT NULL,                               -- Greater positive blood-pressure value; presumed mmHg.
+  bplow    INT NULL,                               -- Lower positive blood-pressure value; presumed mmHg.
   bodytemp DOUBLE NULL,                            -- Body temperature; raw skintemp.
   skintemp DOUBLE NULL,                            -- Skin temperature; raw bodytemp.
 
@@ -384,6 +385,8 @@ main: BEGIN                                        -- Open a named procedure blo
           THEN LEAST(bphigh, bplow)
           ELSE NULL
         END AS bplow,
+        -- Supplier email (29 Sep 2026): temperature labels are reversed; zero is missing.
+        -- Units and further temperature validity bounds remain unconfirmed.
         NULLIF(skintemp, 0) AS bodytemp,             -- Swap labels; zero is missing.
         NULLIF(bodytemp, 0) AS skintemp              -- Swap labels; zero is missing.
       FROM device_minute_checked
