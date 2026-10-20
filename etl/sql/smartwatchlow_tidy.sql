@@ -57,7 +57,11 @@ CREATE TABLE IF NOT EXISTS smartwatchlow_tidy (   -- Preserve a compatible exist
         AND bphigh >= bplow
         AND bplow > 0
       )
-    )
+    ),
+  CONSTRAINT chk_smartwatchlow_tidy_bodytemp
+    CHECK (bodytemp IS NULL OR bodytemp BETWEEN 32 AND 42),
+  CONSTRAINT chk_smartwatchlow_tidy_skintemp
+    CHECK (skintemp IS NULL OR skintemp BETWEEN 20 AND 42)
 ) ENGINE = InnoDB;                                 -- Participant batches and increments are transactional.
 
 
@@ -386,9 +390,9 @@ main: BEGIN                                        -- Open a named procedure blo
           ELSE NULL
         END AS bplow,
         -- Supplier email (29 Sep 2026): temperature labels are reversed; zero is missing.
-        -- Units and further temperature validity bounds remain unconfirmed.
-        NULLIF(skintemp, 0) AS bodytemp,             -- Swap labels; zero is missing.
-        NULLIF(bodytemp, 0) AS skintemp              -- Swap labels; zero is missing.
+        -- Operational study bounds, inclusive; not supplier-validated limits.
+        CASE WHEN skintemp BETWEEN 32 AND 42 THEN skintemp ELSE NULL END AS bodytemp,
+        CASE WHEN bodytemp BETWEEN 20 AND 42 THEN bodytemp ELSE NULL END AS skintemp
       FROM device_minute_checked
       WHERE event_n = 1                            -- Keep one unambiguous event per device-minute.
     ),

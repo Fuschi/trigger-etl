@@ -16,7 +16,7 @@ contact details are not included in the repository.
 | 24 September 2026 | MyAir light is already in lux. | Retain non-negative `light` without rescaling. |
 | 29 September 2026 | Valid PM range is 0–500 µg/m³. | Retain each PM independently within the inclusive range; otherwise set it to `NULL`. |
 | 29 September 2026 | PC has no specified effective validity range; discard PC associated with invalid PM. | Require all three PM values to be valid before retaining any PC; also retain the existing technical PC range 0–65534. |
-| 29 September 2026 | Raw `bodytemp` reports skin temperature; raw `skintemp` reports body temperature. Zero means no returned temperature reading. | Set tidy `bodytemp = NULLIF(raw.skintemp, 0)` and `skintemp = NULLIF(raw.bodytemp, 0)`. |
+| 29 September 2026 | Raw `bodytemp` reports skin temperature; raw `skintemp` reports body temperature. Zero means no returned temperature reading. | Swap the raw labels; apply the operational bounds described below, which also exclude zero. |
 
 An invalid cell becomes `NULL`; other usable measurements in the same row
 can survive. Raw data is never changed. For PC, requiring all three PM fields
@@ -42,8 +42,11 @@ document; executable formulas have not been incorporated into this ETL.
 
 The current code preserves MyAir temperature and filters humidity to its
 existing range, without a heating correction. It applies no angle-dependent
-light or UV correction. Temperature units and further smartwatch temperature
-validity bounds remain unconfirmed. Dividing stored values by 10 or 100 is
+light or UV correction. Temperature units and device-specific smartwatch temperature
+validity bounds remain unconfirmed. The study now applies inclusive operational
+bounds of 32–42 for tidy body temperature and 20–42 for tidy skin temperature,
+assuming °C; these thresholds are not supplier-validated. Out-of-range values
+become NULL independently before aggregation. Dividing stored values by 10 or 100 is
 unit rescaling, not a complete physical calibration.
 
 ## UV precision: readings versus aggregate means

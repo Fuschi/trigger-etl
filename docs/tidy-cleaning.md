@@ -88,11 +88,15 @@ The email refers to a calibration attachment; see
 |---|---|---|
 | `step`, `cal` | Retain ≥0; no upper cutoff | Reported activity values; calorie unit unresolved |
 | `bphigh`, `bplow` | Both must be positive; store greater then lower value, otherwise both `NULL` | Presumed mmHg; corrects firmware-specific reversal |
-| `bodytemp` | Raw `skintemp`; zero becomes `NULL` | Body temperature; unit/range unresolved |
-| `skintemp` | Raw `bodytemp`; zero becomes `NULL` | Skin temperature; unit/range unresolved |
+| `bodytemp` | Raw `skintemp`; retain 32–42 inclusive, otherwise `NULL` | Body temperature; unit/range unresolved |
+| `skintemp` | Raw `bodytemp`; retain 20–42 inclusive, otherwise `NULL` | Skin temperature; unit/range unresolved |
 
 Temperature labels are swapped and zeros become NULL (supplier email, 29 September
-2026). Units and further validity bounds remain unconfirmed.
+2026). The temperature bounds are operational study filters assuming °C, not supplier-validated
+limits. Units remain unconfirmed by the supplier. Invalid temperatures become
+NULL independently, preserving other usable measurements. Rebuild SmartwatchLow
+tidy and its aggregates to apply these filters to history; existing tables need
+a separate constraint migration or recreation to acquire the new CHECK constraints.
 
 Steps and calories repeat within five-minute periods. Their exact semantics
 remain unresolved; aggregations use means, never sums of minute copies.

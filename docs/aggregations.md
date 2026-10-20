@@ -31,7 +31,7 @@ their coverage. This is a project convention, not a completeness adjustment.
 |---|---|
 | GPS | Arithmetic coordinate and accuracy statistics; not distance or trajectory estimates. Accuracy includes zero/negative raw values. |
 | MyAir | All 15 measurements summarized independently. |
-| SmartwatchLow | Step/cal remain means, never totals; pressure counts stay paired. Temperature labels are corrected; zero is missing. |
+| SmartwatchLow | Step/cal remain means, never totals; pressure counts stay paired. Temperature labels and operational range filters are applied in tidy. |
 | SmartwatchHigh | Heart rate, oxygen and breathing rate use continuous statistics. `sleeprate_0_n`…`sleeprate_4_n` count observed minutes by code; no categorical mean. |
 
 Units and retained fields: [tidy cleaning](tidy-cleaning.md#measurements).

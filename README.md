@@ -18,7 +18,9 @@ Study windows, coverage thresholds and derived model variables belong in analyse
 The supplier's September 2026 clarifications are implemented in tidy: MyAir sound
 `raw / 10` (dB), UV `raw / 100` (UV index), PM 0–500 µg/m³ and PC
 availability tied to valid PM; smartwatch body/skin temperature labels are
-swapped and temperature zero becomes `NULL`.
+swapped. Smartwatch temperatures additionally use operational bounds of 32–42
+(body) and 20–42 (skin), inclusive; other values become `NULL`. These bounds
+assume °C and are not supplier-validated.
 
 See [sensor corrections and remaining uncertainties](docs/sensor-corrections.md)
 for the evidence, exact implementation and limits. Scaling does not apply
