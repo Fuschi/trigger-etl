@@ -23,6 +23,32 @@ can survive. Raw data is never changed. For PC, requiring all three PM fields
 is the ETL's explicit interpretation of the association rule, not a separate
 supplier-defined PC threshold.
 
+## Provisional correction of intermittent temperature-channel swaps
+
+The initial supplier mapping remains raw `skintemp` → tidy `bodytemp` and
+raw `bodytemp` → tidy `skintemp`. Some participants show persistent periods
+where this mapping appears reversed. A provisional, *study-derived* correction
+is applied before temperature validity limits, using raw values from
+unambiguous participant-minutes.
+
+Within each UTC participant-day, calculate mean paired temperatures for
+each five-minute bucket (both raw values must be 20–42). The vote compares
+the absolute distances of the mapped body and skin temperatures from 36.5 °C:
+a difference greater than 0.7 °C in favor of the mapped skin temperature
+votes for an additional swap; a difference less than −0.7 °C votes against.
+Other buckets abstain. Apply the additional swap to the whole UTC day only
+if at least 12 buckets are classifiable and at least 80% vote for swapping.
+Otherwise keep the initial supplier mapping. Then apply the 32–42 body and
+20–42 skin limits. These reference values and thresholds are provisional and
+are **not supplier-confirmed**.
+
+This corrects consistent whole-day inversions; it cannot resolve within-day
+changes. Incremental SmartwatchLow tidy refreshes therefore rebuild entire
+affected participant-days, allowing a late upload to change the day-wide vote.
+The downstream five-minute, hourly and daily tables are rebuilt from tidy.
+After installing the updated procedure, a full SmartwatchLow tidy rebuild and
+downstream rebuilds are required to correct historical data.
+
 ## Technical rules versus supplier confirmation
 
 The ETL also applies documented technical bounds and sentinel exclusions.

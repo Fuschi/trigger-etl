@@ -1,7 +1,7 @@
 -- Use recordedUserId; fall back to a unique device mapping.
 -- ============================================================================
 -- smartwatchlow_tidy.sql
--- Supplier corrections and limits: docs/sensor-corrections.md.
+-- Supplier mapping, provisional day-level swap correction and limits: docs/sensor-corrections.md.
 --
 -- Source tables (read only):
 --   smartwatchlow(deviceId, firmware, event_ts DATETIME,
@@ -146,31 +146,45 @@ main: BEGIN                                        -- Open a named procedure blo
   GROUP BY um.deviceId
   HAVING COUNT(DISTINCT um.userId) = 1;            -- Exclude devices assigned to several users.
 
-  DROP TEMPORARY TABLE IF EXISTS tmp_smartwatchlow_minutes; -- Clear this session's prior helper.
-  CREATE TEMPORARY TABLE tmp_smartwatchlow_minutes (
-    userId BIGINT NOT NULL,                         -- Participant affected by a newer raw upload.
-    minute_ts DATETIME(6) NOT NULL,                 -- Complete participant-minute to rebuild.
-    PRIMARY KEY (userId, minute_ts)                 -- Store each affected analytical key once.
+  -- A late upload can change the day-wide temperature mapping.
+  -- Rebuild all minutes of each affected participant-day in incremental mode.
+  DROP TEMPORARY TABLE IF EXISTS tmp_smartwatchlow_rebuild_days;
+  CREATE TEMPORARY TABLE tmp_smartwatchlow_rebuild_days (
+    userId BIGINT NOT NULL, event_date DATE NOT NULL,
+    PRIMARY KEY (userId, event_date)
   ) ENGINE = InnoDB;
 
-  IF NOT v_is_full THEN                             -- A full build reads every visible raw minute.
-    INSERT INTO tmp_smartwatchlow_minutes (userId, minute_ts)
-    SELECT DISTINCT
-      COALESCE(s.recordedUserId, dm.userId) AS userId,
-      TIMESTAMP(
-        DATE(s.event_ts),
-        MAKETIME(HOUR(s.event_ts), MINUTE(s.event_ts), 0)
-      ) AS minute_ts
+  DROP TEMPORARY TABLE IF EXISTS tmp_smartwatchlow_minutes;
+  CREATE TEMPORARY TABLE tmp_smartwatchlow_minutes (
+    userId BIGINT NOT NULL,
+    minute_ts DATETIME(6) NOT NULL,
+    PRIMARY KEY (userId, minute_ts)
+  ) ENGINE = InnoDB;
+
+  IF NOT v_is_full THEN
+    INSERT INTO tmp_smartwatchlow_rebuild_days (userId, event_date)
+    SELECT DISTINCT COALESCE(s.recordedUserId, dm.userId), DATE(s.event_ts)
     FROM smartwatchlow AS s
     LEFT JOIN tmp_smartwatchlow_device_map AS dm
       ON s.deviceId = dm.deviceId AND s.recordedUserId IS NULL
     WHERE COALESCE(s.recordedUserId, dm.userId) IS NOT NULL
       AND s.deviceId IS NOT NULL AND TRIM(s.deviceId) <> ''
-      AND s.firmware IS NOT NULL                   -- Required by the exact-event key.
-      AND TRIM(s.firmware) <> ''                   -- Exclude missing firmware uploads.
-      AND s.event_ts IS NOT NULL                   -- Required to construct the participant-minute.
-      AND s.created_at >= v_previous_created_at     -- Include uploads at the watermark.
-      AND s.created_at <= v_raw_max_created_at;    -- Keep the run inside its frozen cutoff.
+      AND s.firmware IS NOT NULL AND TRIM(s.firmware) <> ''
+      AND s.event_ts IS NOT NULL
+      AND s.created_at >= v_previous_created_at
+      AND s.created_at <= v_raw_max_created_at;
+
+    INSERT INTO tmp_smartwatchlow_minutes (userId, minute_ts)
+    SELECT DISTINCT COALESCE(s.recordedUserId, dm.userId),
+      TIMESTAMP(DATE(s.event_ts), MAKETIME(HOUR(s.event_ts), MINUTE(s.event_ts), 0))
+    FROM smartwatchlow AS s
+    LEFT JOIN tmp_smartwatchlow_device_map AS dm
+      ON s.deviceId = dm.deviceId AND s.recordedUserId IS NULL
+    INNER JOIN tmp_smartwatchlow_rebuild_days AS d
+      ON d.userId = COALESCE(s.recordedUserId, dm.userId)
+     AND d.event_date = DATE(s.event_ts)
+    WHERE s.event_ts IS NOT NULL
+      AND s.created_at <= v_raw_max_created_at;
   END IF;
 
   DROP TEMPORARY TABLE IF EXISTS tmp_smartwatchlow_days; -- Hold aggregate time-partition diagnostics.
@@ -369,32 +383,62 @@ main: BEGIN                                        -- Open a named procedure blo
       WHERE e.payload_n = 1                        -- Remove conflicting exact events first.
     ),
 
-    cleaned_values AS (                            -- Step 5: clean each measurement independently.
-      SELECT
-        userId,
-        deviceId,
-        firmware,
-        event_ts,
-        created_at,
-        minute_ts,
+    -- Infer provisional mappings from unambiguous five-minute raw averages.
+    -- Initial supplier mapping: raw skintemp -> bodytemp, raw bodytemp -> skintemp.
+    unique_minutes AS (
+      SELECT d.*, COUNT(*) OVER (PARTITION BY d.userId, d.minute_ts) AS participant_n
+      FROM device_minute_checked AS d
+      WHERE d.event_n = 1
+    ),
+
+    temperature_5min AS (
+      SELECT userId, DATE(minute_ts) AS event_date,
+        TIMESTAMP(DATE(minute_ts),
+          MAKETIME(HOUR(minute_ts), 5 * FLOOR(MINUTE(minute_ts) / 5), 0)) AS bucket_5min,
+        AVG(skintemp) AS mapped_bodytemp, AVG(bodytemp) AS mapped_skintemp
+      FROM unique_minutes
+      WHERE participant_n = 1 AND bodytemp BETWEEN 20 AND 42 AND skintemp BETWEEN 20 AND 42
+      GROUP BY userId, DATE(minute_ts), bucket_5min
+    ),
+
+    temperature_votes AS (
+      SELECT userId, event_date,
+        CASE
+          WHEN ABS(mapped_bodytemp - 36.5) - ABS(mapped_skintemp - 36.5) > 0.7 THEN 1
+          WHEN ABS(mapped_bodytemp - 36.5) - ABS(mapped_skintemp - 36.5) < -0.7 THEN 0
+          ELSE NULL
+        END AS swap_vote
+      FROM temperature_5min
+    ),
+
+    temperature_days AS (
+      SELECT userId, event_date, COUNT(swap_vote) AS classified_n, AVG(swap_vote) AS p_swap
+      FROM temperature_votes
+      GROUP BY userId, event_date
+    ),
+
+    mapped_values AS (
+      SELECT u.*,
+        CASE WHEN t.classified_n >= 12 AND t.p_swap >= 0.8
+          THEN u.bodytemp ELSE u.skintemp END AS mapped_bodytemp,
+        CASE WHEN t.classified_n >= 12 AND t.p_swap >= 0.8
+          THEN u.skintemp ELSE u.bodytemp END AS mapped_skintemp
+      FROM unique_minutes AS u
+      LEFT JOIN temperature_days AS t
+        ON t.userId = u.userId AND t.event_date = DATE(u.minute_ts)
+    ),
+
+    cleaned_values AS (                            -- Apply validity bounds after mapping.
+      SELECT userId, deviceId, firmware, event_ts, created_at, minute_ts,
         CASE WHEN step >= 0 THEN step ELSE NULL END AS step,
         CASE WHEN cal >= 0 THEN cal ELSE NULL END AS cal,
-        CASE
-          WHEN bphigh > 0 AND bplow > 0
-          THEN GREATEST(bphigh, bplow)
-          ELSE NULL
-        END AS bphigh,                              -- Normalize firmware-specific field reversal.
-        CASE
-          WHEN bphigh > 0 AND bplow > 0
-          THEN LEAST(bphigh, bplow)
-          ELSE NULL
-        END AS bplow,
-        -- Supplier email (29 Sep 2026): temperature labels are reversed; zero is missing.
-        -- Operational study bounds, inclusive; not supplier-validated limits.
-        CASE WHEN skintemp BETWEEN 32 AND 42 THEN skintemp ELSE NULL END AS bodytemp,
-        CASE WHEN bodytemp BETWEEN 20 AND 42 THEN bodytemp ELSE NULL END AS skintemp
-      FROM device_minute_checked
-      WHERE event_n = 1                            -- Keep one unambiguous event per device-minute.
+        CASE WHEN bphigh > 0 AND bplow > 0
+          THEN GREATEST(bphigh, bplow) ELSE NULL END AS bphigh,
+        CASE WHEN bphigh > 0 AND bplow > 0
+          THEN LEAST(bphigh, bplow) ELSE NULL END AS bplow,
+        CASE WHEN mapped_bodytemp BETWEEN 32 AND 42 THEN mapped_bodytemp ELSE NULL END AS bodytemp,
+        CASE WHEN mapped_skintemp BETWEEN 20 AND 42 THEN mapped_skintemp ELSE NULL END AS skintemp
+      FROM mapped_values
     ),
 
     usable_rows AS (                               -- Step 6: remove rows with no usable measurement.

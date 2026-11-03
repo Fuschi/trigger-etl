@@ -24,7 +24,8 @@ raw history up to that cutoff:
 
 | Stream | Rebuilt scope |
 |---|---|
-| GPS, MyAir, SmartwatchLow, SmartwatchHigh | Participant-minutes |
+| GPS, MyAir, SmartwatchHigh | Participant-minutes |
+| SmartwatchLow | Complete participant-days, because the provisional temperature-channel classification is daily |
 | Sleep | Participant/reference-date pairs |
 
 The inclusive boundary catches later arrivals with the same timestamp, but
